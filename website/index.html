@@ -967,6 +967,96 @@
       line-height: 1.4;
     }
 
+    /* ── Roadmap ── */
+    .roadmap {
+      padding: 100px 0;
+    }
+
+    .roadmap-timeline {
+      position: relative;
+      max-width: 700px;
+      margin: 0 auto;
+      padding-left: 40px;
+    }
+
+    .roadmap-timeline::before {
+      content: '';
+      position: absolute;
+      left: 15px;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: linear-gradient(180deg, #F5F547 0%, #1e1e1e 100%);
+    }
+
+    .roadmap-item {
+      position: relative;
+      margin-bottom: 48px;
+    }
+
+    .roadmap-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .roadmap-dot {
+      position: absolute;
+      left: -33px;
+      top: 4px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #1e1e1e;
+      border: 2px solid #333;
+    }
+
+    .roadmap-item.active .roadmap-dot {
+      background: #F5F547;
+      border-color: #F5F547;
+      box-shadow: 0 0 12px rgba(245, 245, 71, 0.3);
+    }
+
+    .roadmap-label {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #F5F547;
+      background: rgba(245, 245, 71, 0.08);
+      border: 1px solid rgba(245, 245, 71, 0.15);
+      border-radius: 100px;
+      padding: 4px 12px;
+      margin-bottom: 10px;
+    }
+
+    .roadmap-item:not(.active) .roadmap-label {
+      color: #666;
+      background: rgba(255, 255, 255, 0.03);
+      border-color: #1e1e1e;
+    }
+
+    .roadmap-title {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .roadmap-desc {
+      color: #888;
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    .roadmap-status {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #F5F547;
+      margin-left: 10px;
+    }
+
     /* ── SVG Icons (inline) ── */
     .icon-svg {
       display: inline-block;
@@ -1035,6 +1125,10 @@
       .value-props-grid {
         grid-template-columns: 1fr;
         gap: 36px;
+      }
+
+      .roadmap-title {
+        font-size: 17px;
       }
 
       .about-content {
@@ -1189,7 +1283,7 @@
       <div class="section-header">
         <h2 class="section-title">How it Works</h2>
         <p class="section-subtitle">
-          OpenSentry analyzes a contract like an auditor would, applying technics that have so far been only available in professional audits.
+          OpenSentry analyzes a contract like an auditor would, applying techniques that have so far been only available in professional audits.
         </p>
       </div>
       <div class="how-cards">
@@ -1311,6 +1405,41 @@
     </div>
   </section>
 
+  <!-- ════ Roadmap ════ -->
+  <section class="roadmap section" id="roadmap">
+    <div class="container">
+      <div class="section-header">
+        <h2 class="section-title">Roadmap</h2>
+      </div>
+      <div class="roadmap-timeline">
+        <div class="roadmap-item active">
+          <div class="roadmap-dot"></div>
+          <div class="roadmap-label">Phase 1</div>
+          <div class="roadmap-title">Core Engine <span class="roadmap-status">In Progress</span></div>
+          <p class="roadmap-desc">Building the foundational analysis and exploit detection capabilities.</p>
+        </div>
+        <div class="roadmap-item">
+          <div class="roadmap-dot"></div>
+          <div class="roadmap-label">Phase 2</div>
+          <div class="roadmap-title">Early User Testing</div>
+          <p class="roadmap-desc">Launching a public Beta standalone tool for testing and gathering feedback by early users.</p>
+        </div>
+        <div class="roadmap-item">
+          <div class="roadmap-dot"></div>
+          <div class="roadmap-label">Phase 3</div>
+          <div class="roadmap-title">Wallet Extension</div>
+          <p class="roadmap-desc">Building the MetaMask wallet extension for seamless in-wallet protection.</p>
+        </div>
+        <div class="roadmap-item">
+          <div class="roadmap-dot"></div>
+          <div class="roadmap-label">Phase 4</div>
+          <div class="roadmap-title">API & Developer Access</div>
+          <p class="roadmap-desc">Empower developers with an open-source API.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- ════ About ════ -->
   <section class="about" id="about">
     <div class="container">
@@ -1322,7 +1451,7 @@
         <div class="about-text">
           <div class="about-name">Liron Achdut</div>
           <div class="about-role">Smart Contract Auditor & Activist</div>
-          <p>I am a blockchain developer and smart contract auditor working on security-critical systems. I review production contracts and analyze exploit for a living. I see firsthand how users are exposed to hidden risks that no wallet warns them about. OpenSentry is my answer to that gap.</p>
+          <p>I am a blockchain developer and smart contract auditor working on security-critical systems. I review production contracts and analyze exploits for a living. I see firsthand how users are exposed to hidden risks that no wallet warns them about. OpenSentry is my answer to that gap.</p>
           <p>My path to Web3 started through activism — a belief that decentralized systems can shift power to individuals. As I evolved into auditing, I realized the security expertise that protects protocols should be a public good, not a luxury.</p>
           <p>Professional auditing is a long, intensive process that demands deep expertise — and not every project can afford it. I sometimes offer my services for free or near-free to projects I believe in, but that doesn't scale. OpenSentry is how I scale that protection to every user, for every protocol they interact with.</p>
         </div>
@@ -1391,6 +1520,10 @@
       <div class="footer-brand">
         <img src="logo.png" alt="OpenSentry" class="footer-brand-icon">
         <span>OpenSentry</span>
+      </div>
+      <div class="footer-links">
+        <a href="OpenSentry%20Deck.pdf" target="_blank">Deck</a>
+        <a href="https://github.com/lirona/OpenSentry" target="_blank">GitHub</a>
       </div>
       <div class="footer-copy">&copy; 2026 OpenSentry. All rights reserved.</div>
     </div>
