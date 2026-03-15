@@ -281,8 +281,16 @@
       color: #999;
       font-size: 17px;
       line-height: 1.7;
-      margin-bottom: 32px;
+      margin-bottom: 24px;
       max-width: 480px;
+    }
+
+    .hero-public-good {
+      color: #F5F547;
+      font-size: 21px;
+      font-weight: 700;
+      margin-bottom: 28px;
+      letter-spacing: 0.02em;
     }
 
     .hero-buttons {
@@ -1081,7 +1089,7 @@
         <a href="#contact">Contact</a>
       </div>
       <div class="navbar-cta">
-        <a href="#" class="btn-primary" onclick="openModal(event)">Join Waitlist</a>
+        <a href="#" class="btn-primary" onclick="openModal(event)">Sign Up for Beta</a>
       </div>
       <button class="hamburger" id="hamburger" aria-label="Toggle menu">
         <span></span>
@@ -1096,7 +1104,7 @@
     <a href="#how-it-works" onclick="closeMobileMenu()">How it Works</a>
     <a href="#about" onclick="closeMobileMenu()">About</a>
     <a href="#contact" onclick="closeMobileMenu()">Contact</a>
-    <a href="#" class="btn-primary" onclick="closeMobileMenu(); openModal(event)">Join Waitlist</a>
+    <a href="#" class="btn-primary" onclick="closeMobileMenu(); openModal(event)">Sign Up for Beta</a>
   </div>
 
   <!-- ════ Hero ════ -->
@@ -1113,8 +1121,9 @@
         <p class="hero-text">
           In blockchain, where individuals hold custody of their own funds, they should also be in charge of their own security. OpenSentry brings audit logic to the wallet layer, shifting security from protocol teams to individual users.
         </p>
+        <p class="hero-public-good">OpenSentry is a public good.<br>Free and open for everyone.</p>
         <div class="hero-buttons">
-          <a href="#" class="btn-primary" onclick="openModal(event)">Sign up for the waitlist</a>
+          <a href="#" class="btn-primary" onclick="openModal(event)">Sign Up for Beta</a>
 
         </div>
       </div>
@@ -1151,7 +1160,7 @@
         <p class="section-subtitle">
           Every blockchain interaction requires trusting code.
           <br>Today, only well-funded protocols get professional audits.
-          <br>Individual users interact with all kind of contracts without protection.
+          <br>Individual users interact with all kinds of contracts without protection.
           <br>Behind the "Confirm Transaction" button may be exploit paths you don't understand.
         </p>
       </div>
@@ -1268,7 +1277,7 @@
           </div>
           <div class="intel-card-finding">
             <span class="intel-card-finding-dot"></span>
-            <p>"Withdrawing from this contract would result in receiving 0.00048 ETH (≈$7) less then is owed, due to a rounding error."</p>
+            <p>"Withdrawing from this contract would result in receiving 0.00048 ETH (≈$7) less than is owed, due to a rounding error."</p>
           </div>
         </div>
       </div>
@@ -1345,9 +1354,9 @@
       <div class="cta-box">
         <h2 class="cta-heading">Be first in line.</h2>
         <p class="cta-text">
-          We're building the future of individual blockchain security. Join the waitlist to get early access when we launch.
+          We're building the future of individual blockchain security. Sign up to get early access to the beta.
         </p>
-        <a href="#" class="btn-outline-accent" onclick="openModal(event)">Sign up for the waitlist</a>
+        <a href="#" class="btn-outline-accent" onclick="openModal(event)">Sign Up for Beta</a>
       </div>
     </div>
   </section>
@@ -1356,8 +1365,8 @@
   <div class="modal-overlay" id="signup-modal">
     <div class="modal">
       <button class="modal-close" onclick="closeModal()">&times;</button>
-      <h3 class="modal-title">Join the Waitlist</h3>
-      <p class="modal-subtitle">Be the first to know when OpenSentry launches.</p>
+      <h3 class="modal-title">Sign Up for Beta</h3>
+      <p class="modal-subtitle">Get early access to audit-grade wallet protection.</p>
       <form class="modal-form" onsubmit="handleSubmit(event)">
         <div class="form-group">
           <label>Name</label>
@@ -1445,7 +1454,7 @@
         btn.disabled = false;
         form.reset();
         closeModal();
-        alert('Thanks for signing up! We\'ll be in touch.');
+        alert('Thanks for signing up! We\'ll send you the Beta version for testing when it\'s ready.');
       } catch (err) {
         btn.textContent = 'Sign Up';
         btn.disabled = false;
