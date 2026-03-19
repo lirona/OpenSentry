@@ -301,71 +301,76 @@
 
     /* Hero card */
     .hero-card {
-      background: #141414;
-      border: 1px solid #1e1e1e;
-      border-radius: 16px;
-      padding: 28px;
-    }
-
-    .hero-card-header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 20px;
-      font-weight: 600;
-      font-size: 15px;
-    }
-
-    .hero-card-shield {
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      background: rgba(200, 255, 0, 0.12);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #F5F547;
-      font-size: 14px;
-    }
-
-    .hero-card-lines {
       display: flex;
       flex-direction: column;
-      gap: 10px;
-      margin-bottom: 24px;
-    }
-
-    .hero-card-line {
-      height: 10px;
-      border-radius: 4px;
-      background: #1e1e1e;
-    }
-
-    .hero-card-line:nth-child(2) {
-      width: 70%;
-    }
-
-    .hero-card-alert {
-      background: rgba(255, 68, 68, 0.08);
-      border: 1px solid rgba(255, 68, 68, 0.25);
-      border-radius: 10px;
-      padding: 18px;
-    }
-
-    .hero-card-alert-header {
-      display: flex;
       align-items: center;
-      gap: 8px;
-      font-weight: 600;
-      font-size: 14px;
-      color: #ff4444;
-      margin-bottom: 8px;
+      justify-content: center;
+      position: relative;
     }
 
-    .hero-card-alert-text {
-      color: #ccc;
-      font-size: 13px;
-      line-height: 1.5;
+    .hero-card::before {
+      content: '';
+      position: absolute;
+      inset: -24px;
+      border-radius: 40px;
+      background: radial-gradient(ellipse at 50% 0%, rgba(245, 245, 71, 0.10) 0%, transparent 60%);
+      filter: blur(20px);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .hero-carousel {
+      position: relative;
+      max-width: 320px;
+      width: 100%;
+      z-index: 1;
+    }
+
+    .hero-carousel img {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      border-radius: 28px;
+      border: 2px solid rgba(255, 255, 255, 0.08);
+      box-shadow:
+        0 0 0 1px rgba(245, 245, 71, 0.06),
+        0 8px 32px rgba(0, 0, 0, 0.5),
+        0 32px 80px rgba(0, 0, 0, 0.3),
+        0 0 80px rgba(245, 245, 71, 0.05);
+      opacity: 0;
+      transition: opacity 0.8s ease;
+    }
+
+    .hero-carousel img:first-child {
+      position: relative;
+    }
+
+    .hero-carousel img.active {
+      opacity: 1;
+    }
+
+    .hero-dots {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .hero-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.2);
+      border: none;
+      cursor: pointer;
+      padding: 0;
+      transition: background 0.3s, transform 0.3s;
+    }
+
+    .hero-dot.active {
+      background: #F5F547;
+      transform: scale(1.25);
     }
 
     /* ── Section Shared ── */
@@ -1223,24 +1228,15 @@
       </div>
 
       <div class="hero-card">
-        <div class="hero-card-header">
-          <div class="hero-card-shield">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
-          </div>
-          Transaction Analysis
+        <div class="hero-carousel" id="hero-carousel">
+          <img src="openSentry critical warning.png" alt="OpenSentry critical risk warning" class="active">
+          <img src="openSentry high warning.png" alt="OpenSentry high risk warning">
+          <img src="openSentry low warning.png" alt="OpenSentry low risk warning">
         </div>
-        <div class="hero-card-lines">
-          <div class="hero-card-line"></div>
-          <div class="hero-card-line"></div>
-        </div>
-        <div class="hero-card-alert">
-          <div class="hero-card-alert-header">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            Critical Risk Detected
-          </div>
-          <p class="hero-card-alert-text">
-            All your deposited funds could be withdrawn at any time by the contract's admin, make sure you trust this protocol.
-          </p>
+        <div class="hero-dots">
+          <button class="hero-dot active" onclick="showSlide(0)"></button>
+          <button class="hero-dot" onclick="showSlide(1)"></button>
+          <button class="hero-dot" onclick="showSlide(2)"></button>
         </div>
       </div>
     </div>
@@ -1530,6 +1526,23 @@
   </footer>
 
   <script>
+    // Hero image carousel
+    let currentSlide = 0;
+    const slides = document.querySelectorAll('#hero-carousel img');
+    const dots = document.querySelectorAll('.hero-dot');
+
+    function showSlide(index) {
+      slides.forEach(s => s.classList.remove('active'));
+      dots.forEach(d => d.classList.remove('active'));
+      currentSlide = index;
+      slides[currentSlide].classList.add('active');
+      dots[currentSlide].classList.add('active');
+    }
+
+    setInterval(() => {
+      showSlide((currentSlide + 1) % slides.length);
+    }, 4000);
+
     const hamburger = document.getElementById('hamburger');
     const mobileMenu = document.getElementById('mobile-menu');
 
