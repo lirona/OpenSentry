@@ -479,136 +479,14 @@
       font-weight: 600;
     }
 
-    /* ── Actionable Intelligence ── */
-    .intel {
-      padding: 100px 0;
-    }
-
-    .intel-header {
+    .how-callout {
       text-align: center;
-      margin-bottom: 56px;
-    }
-
-    .intel-heading {
-      font-size: 36px;
-      font-weight: 700;
-      margin-bottom: 16px;
-      letter-spacing: -0.02em;
-    }
-
-    .intel-text {
-      color: #999;
-      font-size: 17px;
-      line-height: 1.7;
-      max-width: 600px;
-      margin: 0 auto;
-    }
-
-    .intel-comparison {
-      display: grid;
-      grid-template-columns: 1fr auto 1fr;
-      gap: 24px;
-      align-items: stretch;
-    }
-
-    .intel-vs {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .intel-vs span {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 40px;
-      height: 40px;
-      border-radius: 50%;
-      background: #1e1e1e;
-      color: #555;
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 0.05em;
-    }
-
-    .intel-card {
-      background: #141414;
-      border: 1px solid #1e1e1e;
-      border-radius: 16px;
-      padding: 32px;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .intel-card.red-border {
-      border-color: rgba(255, 68, 68, 0.3);
-      background: linear-gradient(180deg, rgba(255, 68, 68, 0.04) 0%, #141414 100%);
-    }
-
-    .intel-card-label {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      margin-bottom: 18px;
-    }
-
-    .intel-card-label .dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-    }
-
-    .intel-card-label .dot.yellow {
-      background: #F5F547;
-    }
-
-    .intel-card-label .dot.red {
-      background: #ff4444;
-    }
-
-    .intel-card-label.red {
-      color: #ff4444;
-    }
-
-    .intel-card-label.yellow {
-      color: #999;
-    }
-
-    .intel-card-quote {
-      color: #666;
-      font-size: 15px;
-      font-style: italic;
-      line-height: 1.7;
-    }
-
-    .intel-card-finding {
-      display: flex;
-      align-items: flex-start;
-      gap: 10px;
-      margin-bottom: 12px;
-    }
-
-    .intel-card-finding:last-child {
-      margin-bottom: 0;
-    }
-
-    .intel-card-finding-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: #ff4444;
-      margin-top: 8px;
-      flex-shrink: 0;
-    }
-
-    .intel-card-finding p {
-      color: #ccc;
-      font-size: 14px;
-      line-height: 1.7;
+      color: #F5F547;
+      font-size: 20px;
+      font-weight: 600;
+      line-height: 1.6;
+      max-width: 640px;
+      margin: 56px auto 0;
     }
 
     /* ── CTA ── */
@@ -1114,18 +992,6 @@
         width: 100%;
       }
 
-      .intel-comparison {
-        grid-template-columns: 1fr;
-        gap: 16px;
-      }
-
-      .intel-vs {
-        display: none;
-      }
-
-      .intel-heading {
-        font-size: 28px;
-      }
 
       .value-props-grid {
         grid-template-columns: 1fr;
@@ -1332,45 +1198,7 @@
           <h3>Execution Path Simulation</h3>
         </div>
       </div>
-    </div>
-  </section>
-
-  <!-- ════ Actionable Intelligence ════ -->
-  <section class="intel" id="examples">
-    <div class="container">
-      <div class="intel-header">
-        <h2 class="intel-heading">Actionable Intelligence</h2>
-        <p class="intel-text">
-          OpenSentry tells you exactly what is the issue and what it means for your funds in plain language.
-        </p>
-      </div>
-
-      <div class="intel-comparison">
-        <div class="intel-card">
-          <div class="intel-card-label yellow">
-            <span class="dot yellow"></span>
-            STANDARD WALLET
-          </div>
-          <p class="intel-card-quote">
-            "Warning: Request may not be safe."
-          </p>
-        </div>
-        <div class="intel-vs"><span>VS</span></div>
-        <div class="intel-card red-border">
-          <div class="intel-card-label red">
-            <span class="dot red"></span>
-            OPENSENTRY ANALYSIS
-          </div>
-          <div class="intel-card-finding">
-            <span class="intel-card-finding-dot"></span>
-            <p>"Depositing funds could result in losing your accumulated interest in the future if the contract is compromised."</p>
-          </div>
-          <div class="intel-card-finding">
-            <span class="intel-card-finding-dot"></span>
-            <p>"Withdrawing from this contract would result in receiving 0.00048 ETH (≈$7) less than is owed, due to a rounding error."</p>
-          </div>
-        </div>
-      </div>
+      <p class="how-callout">After analysis, OpenSentry tells you in plain language<br>exactly what the issue is and what it means for your funds.</p>
     </div>
   </section>
 
