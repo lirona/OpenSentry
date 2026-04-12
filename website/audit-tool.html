@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenSentry - Smart Contract Security Analysis</title>
+  <link rel="icon" type="image/png" href="logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    /* ── Reset ── */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: #0a0a0a;
+      background-image: radial-gradient(rgba(255,255,255,0.03) 1px, transparent 1px);
+      background-size: 24px 24px;
+      color: #fff;
+      font-size: 16px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+    }
+
+    a { text-decoration: none; color: inherit; }
+
+    .container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+    /* ── Navbar ── */
+    .navbar {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(10,10,10,0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid #1e1e1e;
+    }
+    .navbar .container {
+      display: flex; align-items: center; justify-content: space-between; height: 64px;
+    }
+    .navbar-brand {
+      display: flex; align-items: center; gap: 3px;
+      font-weight: 700; font-size: 20px;
+    }
+    .navbar-brand img { width: 24px; height: 24px; border-radius: 4px; object-fit: contain; position: relative; top: -3px; }
+    .navbar-back { color: #999; font-size: 14px; font-weight: 500; transition: color .2s; }
+    .navbar-back:hover { color: #fff; }
+
+    /* ── Severity colors ── */
+    .sev-critical { --sev: #FF4444; }
+    .sev-warning  { --sev: #FF8C00; }
+    .sev-info     { --sev: #4A9EFF; }
+    .sev-safe     { --sev: #4ADE80; }
+    .sev-unknown  { --sev: #666; }
+
+    .sev-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 11px; font-weight: 700; letter-spacing: .5px;
+      padding: 3px 8px; border-radius: 4px;
+      background: color-mix(in srgb, var(--sev) 15%, transparent);
+      color: var(--sev); border: 1px solid color-mix(in srgb, var(--sev) 30%, transparent);
+      text-transform: uppercase; white-space: nowrap;
+    }
+
+    /* ── Section visibility ── */
+    .section { display: none; }
+    .section.active { display: block; }
+
+    /* ── Input Section ── */
+    #input-section { padding: 80px 0 40px; text-align: center; }
+    .hero-title { font-size: 36px; font-weight: 700; margin-bottom: 12px; }
+    .hero-sub { color: #999; font-size: 16px; margin-bottom: 40px; max-width: 520px; margin-left: auto; margin-right: auto; }
+
+    .input-card {
+      background: #111; border: 1px solid #1e1e1e; border-radius: 12px;
+      padding: 32px; max-width: 520px; margin: 0 auto; text-align: left;
+    }
+    .input-label { display: block; font-size: 13px; font-weight: 600; color: #ccc; margin-bottom: 6px; }
+    .input-field {
+      width: 100%; padding: 12px 14px; border-radius: 8px;
+      border: 1px solid #333; background: #0a0a0a; color: #fff;
+      font-family: 'Inter', monospace; font-size: 14px;
+      transition: border-color .2s; outline: none;
+    }
+    .input-field:focus { border-color: #F5F547; }
+    .input-field::placeholder { color: #555; }
+    select.input-field { cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23999' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px; }
+    .input-group { margin-bottom: 20px; }
+    .input-error { color: #FF4444; font-size: 12px; margin-top: 4px; display: none; }
+    .input-error.visible { display: block; }
+
+    .btn-analyze {
+      width: 100%; padding: 14px; border-radius: 8px; border: none; cursor: pointer;
+      background: #F5F547; color: #0a0a0a; font-weight: 700; font-size: 15px;
+      font-family: inherit; transition: opacity .2s;
+    }
+    .btn-analyze:hover:not(:disabled) { opacity: .9; }
+    .btn-analyze:disabled { opacity: .4; cursor: not-allowed; }
+
+    .cooldown-bar {
+      margin-top: 12px; font-size: 12px; color: #888; text-align: center; display: none;
+    }
+    .cooldown-bar.visible { display: block; }
+
+    .quota-indicator {
+      margin-top: 16px; font-size: 12px; color: #666; text-align: center;
+    }
+
+    /* ── Loading Section ── */
+    #loading-section { padding: 60px 0; }
+    .loading-header { text-align: center; margin-bottom: 32px; }
+    .loading-title { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+    .loading-sub { color: #888; font-size: 14px; font-family: monospace; word-break: break-all; }
+
+    .agent-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 12px; margin-bottom: 24px;
+    }
+    .agent-card {
+      background: #111; border: 1px solid #1e1e1e; border-radius: 10px;
+      padding: 16px; display: flex; align-items: center; gap: 12px;
+      transition: border-color .3s;
+    }
+    .agent-card.completed { border-color: #333; }
+    .agent-card.failed { border-color: #FF4444; opacity: .7; }
+    .agent-icon { font-size: 22px; flex-shrink: 0; width: 32px; text-align: center; }
+    .agent-info { flex: 1; min-width: 0; }
+    .agent-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .agent-status { font-size: 11px; color: #888; margin-top: 2px; }
+    .agent-status-icon { margin-right: 4px; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid #333; border-top-color: #F5F547; border-radius: 50%; animation: spin .6s linear infinite; vertical-align: middle; margin-right: 4px; }
+
+    .progress-bar-track {
+      height: 4px; background: #1e1e1e; border-radius: 2px; overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%; background: #F5F547; border-radius: 2px;
+      transition: width .3s ease;
+    }
+
+    /* ── Results Section ── */
+    #results-section { padding: 40px 0 80px; }
+
+    .results-header {
+      background: #111; border: 1px solid #1e1e1e; border-radius: 12px;
+      padding: 24px; margin-bottom: 20px;
+    }
+    .results-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 12px; }
+    .results-contract-name { font-size: 22px; font-weight: 700; }
+    .results-address {
+      font-family: monospace; font-size: 13px; color: #888;
+      display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+    }
+    .results-address:hover { color: #ccc; }
+    .copy-icon { width: 14px; height: 14px; opacity: .5; transition: opacity .2s; }
+    .results-address:hover .copy-icon { opacity: 1; }
+    .chain-badge {
+      font-size: 11px; font-weight: 600; text-transform: capitalize;
+      padding: 3px 10px; border-radius: 4px; background: #1e1e1e; color: #ccc;
+    }
+    .results-time { font-size: 12px; color: #555; }
+
+    .summary-bar {
+      display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 24px;
+    }
+    .summary-count {
+      display: flex; align-items: center; gap: 6px;
+      background: #111; border: 1px solid #1e1e1e; border-radius: 8px;
+      padding: 10px 16px; font-size: 14px; font-weight: 600;
+    }
+    .summary-count .count { font-size: 20px; font-weight: 700; }
+
+    /* ── Agent Summaries Table ── */
+    .agent-table { margin-bottom: 28px; }
+    .agent-table-title { font-size: 16px; font-weight: 700; margin-bottom: 12px; }
+    .agent-table-grid {
+      display: grid; grid-template-columns: 1fr;
+      border: 1px solid #1e1e1e; border-radius: 10px; overflow: hidden;
+    }
+    .agent-row {
+      display: grid; grid-template-columns: 180px 90px 1fr;
+      align-items: center; gap: 12px; padding: 12px 16px;
+      border-bottom: 1px solid #1e1e1e; font-size: 13px;
+    }
+    .agent-row:last-child { border-bottom: none; }
+    .agent-row:nth-child(odd) { background: #0f0f0f; }
+    .agent-row-name { font-weight: 600; }
+    .agent-row-summary { color: #999; }
+
+    /* ── Filters ── */
+    .filter-bar {
+      display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; align-items: center;
+    }
+    .filter-label { font-size: 12px; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+    .filter-btn {
+      padding: 5px 12px; border-radius: 6px; border: 1px solid #333;
+      background: transparent; color: #ccc; font-size: 12px; font-weight: 500;
+      cursor: pointer; font-family: inherit; transition: all .2s;
+    }
+    .filter-btn:hover { border-color: #666; }
+    .filter-btn.active { background: #1e1e1e; border-color: #555; color: #fff; }
+
+    /* ── Findings ── */
+    .findings-empty { text-align: center; color: #666; padding: 40px 0; font-size: 14px; }
+    .finding-card {
+      background: #111; border: 1px solid #1e1e1e; border-radius: 10px;
+      margin-bottom: 10px; overflow: hidden; transition: border-color .2s;
+    }
+    .finding-card:hover { border-color: #333; }
+    .finding-header {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+      padding: 16px; cursor: pointer; user-select: none;
+    }
+    .finding-id { font-family: monospace; font-size: 12px; color: #666; font-weight: 600; }
+    .finding-check { font-size: 14px; font-weight: 600; flex: 1; min-width: 120px; }
+    .finding-location { font-family: monospace; font-size: 12px; color: #888; }
+    .finding-agents { display: flex; flex-wrap: wrap; gap: 4px; }
+    .finding-agent-badge {
+      font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 3px;
+      background: #1e1e1e; color: #aaa;
+    }
+    .finding-summary { padding: 0 16px 14px; color: #ccc; font-size: 13px; line-height: 1.6; }
+    .finding-expand-icon {
+      width: 16px; height: 16px; transition: transform .2s; flex-shrink: 0;
+      color: #555;
+    }
+    .finding-card.expanded .finding-expand-icon { transform: rotate(180deg); }
+    .finding-detail {
+      display: none; padding: 0 16px 16px; border-top: 1px solid #1e1e1e;
+    }
+    .finding-card.expanded .finding-detail { display: block; padding-top: 14px; }
+    .finding-detail-label { font-size: 11px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; margin-top: 12px; }
+    .finding-detail-label:first-child { margin-top: 0; }
+    .finding-detail-text { font-size: 13px; color: #ccc; line-height: 1.7; white-space: pre-wrap; }
+
+    .btn-new-analysis {
+      display: inline-flex; align-items: center; gap: 6px;
+      margin-top: 24px; padding: 10px 20px; border-radius: 8px;
+      border: 1px solid #333; background: transparent; color: #ccc;
+      font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+      transition: border-color .2s, color .2s;
+    }
+    .btn-new-analysis:hover { border-color: #888; color: #fff; }
+
+    /* ── Error Section ── */
+    #error-section { padding: 80px 0; text-align: center; }
+    .error-card {
+      background: #111; border: 1px solid #1e1e1e; border-radius: 12px;
+      padding: 40px; max-width: 480px; margin: 0 auto;
+    }
+    .error-icon { font-size: 40px; margin-bottom: 16px; }
+    .error-title { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+    .error-message { color: #999; font-size: 14px; margin-bottom: 24px; line-height: 1.6; }
+    .btn-retry {
+      padding: 10px 24px; border-radius: 8px; border: 1px solid #333;
+      background: transparent; color: #fff; font-size: 14px; font-weight: 600;
+      cursor: pointer; font-family: inherit; transition: border-color .2s;
+    }
+    .btn-retry:hover { border-color: #888; }
+
+    /* ── Responsive ── */
+    @media (max-width: 640px) {
+      .hero-title { font-size: 26px; }
+      .input-card { padding: 20px; }
+      .agent-grid { grid-template-columns: 1fr 1fr; }
+      .agent-row { grid-template-columns: 1fr; gap: 4px; }
+      .agent-row-name { font-weight: 700; }
+      .results-meta { flex-direction: column; align-items: flex-start; }
+      .finding-header { flex-direction: column; align-items: flex-start; }
+      .summary-bar { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ════ Navbar ════ -->
+  <nav class="navbar">
+    <div class="container">
+      <a href="/" class="navbar-brand">
+        <img src="logo.png" alt="OpenSentry">
+        <span>OpenSentry</span>
+      </a>
+      <a href="/" class="navbar-back">Back to Home</a>
+    </div>
+  </nav>
+
+  <main class="container">
+
+    <!-- ════ Input Section ════ -->
+    <section id="input-section" class="section active">
+      <h1 class="hero-title">Smart Contract Security Analysis</h1>
+      <p class="hero-sub">Paste a verified contract address and select a chain. We will run a thorough analysis of the contract(s) and provide you with a report.</p>
+
+      <div class="input-card">
+        <form id="analyze-form" autocomplete="off">
+          <div class="input-group">
+            <label class="input-label" for="address-input">Contract Address</label>
+            <input type="text" id="address-input" class="input-field" placeholder="0x..." spellcheck="false" maxlength="42">
+            <div id="address-error" class="input-error"></div>
+          </div>
+          <div class="input-group">
+            <label class="input-label" for="chain-select">Chain</label>
+            <select id="chain-select" class="input-field">
+              <option value="ethereum">Ethereum</option>
+              <option value="base">Base</option>
+              <option value="arbitrum">Arbitrum</option>
+              <option value="optimism">Optimism</option>
+              <option value="polygon">Polygon</option>
+            </select>
+          </div>
+          <button type="submit" id="analyze-btn" class="btn-analyze">Analyze</button>
+        </form>
+        <div id="cooldown-bar" class="cooldown-bar"></div>
+        <div id="quota-indicator" class="quota-indicator"></div>
+      </div>
+    </section>
+
+    <!-- ════ Loading Section ════ -->
+    <section id="loading-section" class="section">
+      <div class="loading-header">
+        <div class="loading-title">Analyzing contract...</div>
+        <div id="loading-sub" class="loading-sub"></div>
+      </div>
+      <div id="agent-grid" class="agent-grid"></div>
+      <div class="progress-bar-track">
+        <div id="progress-fill" class="progress-bar-fill" style="width:0%"></div>
+      </div>
+    </section>
+
+    <!-- ════ Results Section ════ -->
+    <section id="results-section" class="section">
+      <div id="results-header" class="results-header"></div>
+      <div id="summary-bar" class="summary-bar"></div>
+
+      <div class="agent-table">
+        <div class="agent-table-title">Risk Summary by Agent</div>
+        <div id="agent-table-grid" class="agent-table-grid"></div>
+      </div>
+
+      <div id="filter-bar" class="filter-bar"></div>
+      <div id="findings-list"></div>
+
+      <button class="btn-new-analysis" onclick="resetToInput()">New Analysis</button>
+    </section>
+
+    <!-- ════ Error Section ════ -->
+    <section id="error-section" class="section">
+      <div class="error-card">
+        <div id="error-icon" class="error-icon"></div>
+        <div id="error-title" class="error-title"></div>
+        <div id="error-message" class="error-message"></div>
+        <button class="btn-retry" onclick="resetToInput()">Try Again</button>
+      </div>
+    </section>
+
+  </main>
+
+<script>
+(function() {
+  'use strict';
+
+  // ── Constants ──────────────────────────────────────────────────────────────
+
+  const AGENTS = [
+    { key: 'access-control',      name: 'Access Control',        icon: '\u{1F510}' },
+    { key: 'token-mechanics',     name: 'Token Mechanics',       icon: '\u{1FA99}' },
+    { key: 'economic-fees',       name: 'Economic & Fees',       icon: '\u{1F4B0}' },
+    { key: 'oracle-dependencies', name: 'Oracle & Dependencies', icon: '\u{1F52E}' },
+    { key: 'mev-safety',          name: 'MEV & Tx Safety',       icon: '\u26A1'     },
+    { key: 'code-quality',        name: 'Code Quality',          icon: '\u{1F50D}' },
+    { key: 'transparency',        name: 'Transparency',          icon: '\u{1F441}'  },
+    { key: 'governance',          name: 'Governance',            icon: '\u{1F3DB}'  },
+  ];
+
+  const SEV_ORDER = ['CRITICAL', 'WARNING', 'INFO', 'SAFE', 'unknown'];
+
+  const SEV_CLASS = {
+    CRITICAL: 'sev-critical',
+    WARNING:  'sev-warning',
+    INFO:     'sev-info',
+    SAFE:     'sev-safe',
+    unknown:  'sev-unknown',
+  };
+
+  const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
+  const COOLDOWN_SEC = 60;
+  const QUOTA_KEY = 'os_quota';
+
+  const ERROR_MAP = {
+    invalid_address:  { icon: '\u26A0\uFE0F', title: 'Invalid Address', msg: 'Please enter a valid 0x-prefixed 40-character hex address.' },
+    unsupported_chain:{ icon: '\u26A0\uFE0F', title: 'Unsupported Chain', msg: 'The selected chain is not supported. Choose Ethereum, Base, Arbitrum, Optimism, or Polygon.' },
+    unverified:       { icon: '\u{1F50D}', title: 'Unverified Contract', msg: 'This contract\'s source code is not verified on the block explorer. OpenSentry requires verified source code to perform analysis.' },
+    daily_limit:      { icon: '\u23F0', title: 'Daily Limit Reached', msg: 'The daily analysis limit has been reached. This resets at midnight UTC. Please try again tomorrow.' },
+    ip_cooldown:      { icon: '\u23F3', title: 'Please Wait', msg: 'You recently submitted an analysis. Please wait before trying again.' },
+    missing_api_key:  { icon: '\u{1F511}', title: 'Configuration Error', msg: 'The server is missing a required API key. Please contact the administrator.' },
+    internal_error:   { icon: '\u{1F6A8}', title: 'Server Error', msg: 'An unexpected error occurred. Please try again later.' },
+  };
+
+  // ── DOM refs ───────────────────────────────────────────────────────────────
+
+  const $ = (sel) => document.querySelector(sel);
+  const form         = $('#analyze-form');
+  const addrInput    = $('#address-input');
+  const chainSelect  = $('#chain-select');
+  const analyzeBtn   = $('#analyze-btn');
+  const addrError    = $('#address-error');
+  const cooldownBar  = $('#cooldown-bar');
+  const quotaEl      = $('#quota-indicator');
+
+  // ── State ──────────────────────────────────────────────────────────────────
+
+  let cooldownTimer  = null;
+  let cooldownSec    = 0;
+  let currentReport  = null;
+  let activeSevFilter  = null;
+  let activeAgentFilter = null;
+
+  // ── Section switching ──────────────────────────────────────────────────────
+
+  function showSection(id) {
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    $('#' + id).classList.add('active');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  // ── Quota tracking (localStorage-based, approximate) ───────────────────────
+
+  function getQuota() {
+    try {
+      const raw = localStorage.getItem(QUOTA_KEY);
+      if (!raw) return { date: todayUTC(), used: 0 };
+      const q = JSON.parse(raw);
+      if (q.date !== todayUTC()) return { date: todayUTC(), used: 0 };
+      return q;
+    } catch { return { date: todayUTC(), used: 0 }; }
+  }
+
+  function bumpQuota() {
+    const q = getQuota();
+    q.used++;
+    localStorage.setItem(QUOTA_KEY, JSON.stringify(q));
+    renderQuota();
+  }
+
+  function renderQuota() {
+    const q = getQuota();
+    const remaining = Math.max(0, 30 - q.used);
+    quotaEl.textContent = remaining > 0
+      ? `${remaining} analyses remaining today`
+      : 'Daily analysis limit reached. Resets at midnight UTC.';
+  }
+
+  function todayUTC() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  // ── Cooldown ───────────────────────────────────────────────────────────────
+
+  function startCooldown() {
+    cooldownSec = COOLDOWN_SEC;
+    analyzeBtn.disabled = true;
+    cooldownBar.classList.add('visible');
+    tickCooldown();
+    cooldownTimer = setInterval(tickCooldown, 1000);
+  }
+
+  function tickCooldown() {
+    if (cooldownSec <= 0) {
+      clearInterval(cooldownTimer);
+      cooldownTimer = null;
+      analyzeBtn.disabled = false;
+      cooldownBar.classList.remove('visible');
+      cooldownBar.textContent = '';
+      return;
+    }
+    cooldownBar.textContent = `Please wait ${cooldownSec}s before next analysis`;
+    cooldownSec--;
+  }
+
+  // ── Validation ─────────────────────────────────────────────────────────────
+
+  function validateAddress() {
+    const val = addrInput.value.trim();
+    if (!val) { showAddrError('Address is required.'); return false; }
+    if (!ADDRESS_RE.test(val)) { showAddrError('Invalid format. Must be 0x followed by 40 hex characters.'); return false; }
+    hideAddrError();
+    return true;
+  }
+
+  function showAddrError(msg) { addrError.textContent = msg; addrError.classList.add('visible'); }
+  function hideAddrError() { addrError.textContent = ''; addrError.classList.remove('visible'); }
+
+  // ── Loading state ──────────────────────────────────────────────────────────
+
+  function renderLoadingState(address, chain) {
+    $('#loading-sub').textContent = `${address} on ${chain}`;
+
+    const grid = $('#agent-grid');
+    grid.innerHTML = AGENTS.map(a => `
+      <div class="agent-card" data-agent="${a.key}">
+        <div class="agent-icon">${a.icon}</div>
+        <div class="agent-info">
+          <div class="agent-name">${a.name}</div>
+          <div class="agent-status"><span class="spinner"></span> Analyzing...</div>
+        </div>
+      </div>
+    `).join('');
+
+    $('#progress-fill').style.width = '10%';
+  }
+
+  function updateAgentCards(report) {
+    const summaries = report.agentSummaries || [];
+    summaries.forEach(s => {
+      const agent = AGENTS.find(a => a.name === s.agent);
+      if (!agent) return;
+      const card = document.querySelector(`.agent-card[data-agent="${agent.key}"]`);
+      if (!card) return;
+      const statusEl = card.querySelector('.agent-status');
+      if (s.status === 'completed') {
+        card.classList.add('completed');
+        const sevClass = SEV_CLASS[s.severity] || 'sev-unknown';
+        statusEl.innerHTML = `<span class="agent-status-icon" style="color: var(--sev)">&#10003;</span> ${esc(s.severity)}`;
+        card.classList.add(sevClass);
+        card.style.setProperty('--sev', getComputedStyle(document.createElement('div')).getPropertyValue('--sev'));
+        // Set the CSS var on the card for the checkmark color.
+        const colors = { CRITICAL: '#FF4444', WARNING: '#FF8C00', INFO: '#4A9EFF', SAFE: '#4ADE80', unknown: '#666' };
+        statusEl.querySelector('.agent-status-icon').style.color = colors[s.severity] || '#666';
+      } else {
+        card.classList.add('failed');
+        statusEl.innerHTML = '<span class="agent-status-icon" style="color:#FF4444">&#10007;</span> Failed';
+      }
+    });
+    $('#progress-fill').style.width = '100%';
+  }
+
+  // ── Results rendering ──────────────────────────────────────────────────────
+
+  function renderResults(data) {
+    currentReport = data;
+    const r = data.report;
+
+    // Header
+    const truncAddr = data.address.slice(0, 6) + '...' + data.address.slice(-4);
+    const ts = new Date(data.timestamp).toLocaleString();
+    const overallSev = r.overallSeverity || 'unknown';
+    const sevCls = SEV_CLASS[overallSev] || 'sev-unknown';
+
+    $('#results-header').innerHTML = `
+      <div class="results-meta">
+        <span class="results-contract-name">${esc(data.contractName || 'Contract')}</span>
+        <span class="${sevCls} sev-badge">${esc(overallSev)}</span>
+        <span class="chain-badge">${esc(data.chain)}</span>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:4px">
+        <span class="results-address" title="Click to copy" onclick="copyAddress('${esc(data.address)}', this)">
+          ${esc(truncAddr)}
+          <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        </span>
+        <span class="results-time">${ts}</span>
+      </div>
+    `;
+
+    // Summary bar
+    const counts = [
+      { label: 'Critical', count: r.criticalCount, cls: 'sev-critical' },
+      { label: 'Warning',  count: r.warningCount,  cls: 'sev-warning' },
+      { label: 'Info',     count: r.infoCount,      cls: 'sev-info' },
+    ];
+    $('#summary-bar').innerHTML = counts.map(c => `
+      <div class="summary-count ${c.cls}">
+        <span class="count" style="color:var(--sev)">${c.count}</span>
+        <span>${c.label}</span>
+      </div>
+    `).join('');
+
+    // Agent summaries table
+    $('#agent-table-grid').innerHTML = (r.agentSummaries || []).map(s => {
+      const cls = SEV_CLASS[s.severity] || 'sev-unknown';
+      return `<div class="agent-row">
+        <div class="agent-row-name">${esc(s.agent)}</div>
+        <div><span class="${cls} sev-badge">${esc(s.severity)}</span></div>
+        <div class="agent-row-summary">${esc(s.summary)}</div>
+      </div>`;
+    }).join('');
+
+    // Filters
+    renderFilters(r);
+
+    // Findings
+    renderFindings(r.findings);
+  }
+
+  function renderFilters(report) {
+    activeSevFilter = null;
+    activeAgentFilter = null;
+
+    // Collect unique severities and agents from findings.
+    const sevs = [...new Set(report.findings.map(f => f.severity))];
+    const agents = [...new Set(report.findings.flatMap(f => f.agents))].sort();
+
+    let html = '';
+    if (sevs.length > 0 || agents.length > 0) {
+      html += '<span class="filter-label">Filter:</span>';
+      html += '<button class="filter-btn active" data-filter="all">All</button>';
+      sevs.forEach(s => {
+        const cls = SEV_CLASS[s] || '';
+        html += `<button class="filter-btn" data-filter="sev:${esc(s)}">${esc(s)}</button>`;
+      });
+      agents.forEach(a => {
+        html += `<button class="filter-btn" data-filter="agent:${esc(a)}">${esc(a)}</button>`;
+      });
+    }
+    $('#filter-bar').innerHTML = html;
+
+    // Bind click handlers.
+    document.querySelectorAll('#filter-bar .filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#filter-bar .filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        const val = btn.dataset.filter;
+        if (val === 'all') { activeSevFilter = null; activeAgentFilter = null; }
+        else if (val.startsWith('sev:')) { activeSevFilter = val.slice(4); activeAgentFilter = null; }
+        else if (val.startsWith('agent:')) { activeAgentFilter = val.slice(6); activeSevFilter = null; }
+        renderFindings(currentReport.report.findings);
+      });
+    });
+  }
+
+  function renderFindings(findings) {
+    let filtered = findings;
+    if (activeSevFilter) filtered = filtered.filter(f => f.severity === activeSevFilter);
+    if (activeAgentFilter) filtered = filtered.filter(f => f.agents.includes(activeAgentFilter));
+
+    if (filtered.length === 0) {
+      $('#findings-list').innerHTML = `<div class="findings-empty">${findings.length === 0 ? 'No issues found. All agents report SAFE.' : 'No findings match the current filter.'}</div>`;
+      return;
+    }
+
+    $('#findings-list').innerHTML = filtered.map(f => {
+      const cls = SEV_CLASS[f.severity] || 'sev-unknown';
+      const agentBadges = (f.agents || []).map(a => `<span class="finding-agent-badge">${esc(a)}</span>`).join('');
+      return `
+        <div class="finding-card" onclick="toggleFinding(this)">
+          <div class="finding-header">
+            <span class="finding-id">${esc(f.id)}</span>
+            <span class="${cls} sev-badge">${esc(f.severity)}</span>
+            <span class="finding-check">${esc(f.check)}</span>
+            <span class="finding-location">${esc(f.location)}</span>
+            <div class="finding-agents">${agentBadges}</div>
+            <svg class="finding-expand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="finding-summary">${esc(f.summary)}</div>
+          <div class="finding-detail">
+            <div class="finding-detail-label">Technical Detail</div>
+            <div class="finding-detail-text">${esc(f.detail)}</div>
+            <div class="finding-detail-label">User Impact</div>
+            <div class="finding-detail-text">${esc(f.user_impact)}</div>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  // ── Error rendering ────────────────────────────────────────────────────────
+
+  function showError(errCode, message) {
+    const mapped = ERROR_MAP[errCode] || ERROR_MAP.internal_error;
+    $('#error-icon').textContent = mapped.icon;
+    $('#error-title').textContent = mapped.title;
+    $('#error-message').textContent = message || mapped.msg;
+    showSection('error-section');
+  }
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
+  function esc(s) {
+    if (typeof s !== 'string') return '';
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  // Exposed on window for inline onclick handlers.
+  window.toggleFinding = function(card) {
+    card.classList.toggle('expanded');
+  };
+
+  window.copyAddress = function(addr, el) {
+    navigator.clipboard.writeText(addr).then(() => {
+      const prev = el.textContent;
+      el.textContent = 'Copied!';
+      setTimeout(() => { el.innerHTML = el.dataset.original || prev; }, 1200);
+    }).catch(() => {});
+  };
+
+  window.resetToInput = function() {
+    currentReport = null;
+    showSection('input-section');
+    renderQuota();
+  };
+
+  // ── Main submit flow ───────────────────────────────────────────────────────
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (analyzeBtn.disabled) return;
+    if (!validateAddress()) return;
+
+    const address = addrInput.value.trim();
+    const chain = chainSelect.value;
+
+    // Show loading
+    showSection('loading-section');
+    renderLoadingState(address, chain);
+
+    // Animate progress slowly while waiting.
+    let pct = 10;
+    const progressInterval = setInterval(() => {
+      pct = Math.min(pct + Math.random() * 5, 90);
+      $('#progress-fill').style.width = pct + '%';
+    }, 800);
+
+    try {
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address, chain }),
+      });
+
+      clearInterval(progressInterval);
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        showError(data.error, data.message);
+        startCooldown();
+        return;
+      }
+
+      // Success
+      bumpQuota();
+      startCooldown();
+
+      // Brief pause to let the user see the agents flip to their final state.
+      updateAgentCards(data.report);
+      await new Promise(r => setTimeout(r, 600));
+
+      showSection('results-section');
+      renderResults(data);
+
+    } catch (err) {
+      clearInterval(progressInterval);
+      showError('internal_error', 'Network error. Please check your connection and try again.');
+      startCooldown();
+    }
+  });
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+
+  renderQuota();
+  addrInput.addEventListener('input', hideAddrError);
+
+})();
+</script>
+
+</body>
+</html>
