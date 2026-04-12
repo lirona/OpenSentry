@@ -70,7 +70,7 @@ export async function fetchSource(address, chain, env, options = {}) {
     };
   }
 
-  const apiKey = resolveApiKey(env, chain);
+  const apiKey = resolveApiKey(env);
   if (!apiKey) {
     return {
       success: false,
@@ -206,15 +206,10 @@ function isRateLimited(data) {
   );
 }
 
-function resolveApiKey(env, chain) {
+function resolveApiKey(env) {
   if (!env) return "";
-  // Prefer the (legacy) chain-specific key if the developer explicitly set one,
-  // otherwise fall back to the unified V2 ETHERSCAN_API_KEY.
-  const specific = env[LEGACY_KEY_VARS[chain]];
-  if (typeof specific === "string" && specific.length > 0) return specific;
-  const unified = env.ETHERSCAN_API_KEY;
-  if (typeof unified === "string" && unified.length > 0) return unified;
-  return "";
+  const apiKey = env.ETHERSCAN_API_KEY;
+  return (typeof apiKey === "string" && apiKey.length > 0) ? apiKey : "";
 }
 
 async function callExplorer(url) {

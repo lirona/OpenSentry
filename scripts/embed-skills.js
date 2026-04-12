@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..');
 const AGENTS_DIR = join(REPO_ROOT, 'skill', 'agents');
+const SHARED_RULES_FILE = join(REPO_ROOT, 'skill', 'shared-rules.md');
 const OUTPUT_FILE = join(REPO_ROOT, 'functions', 'api', 'lib', 'embedded-skills.js');
 
 // Display names must match the Risk Summary table in
@@ -55,6 +56,67 @@ function escapeForTemplateLiteral(s) {
     .replace(/\$\{/g, '\\${');
 }
 
+/**
+ * Read skill/shared-rules.md and split it into two parts:
+ *   - rules:        methodology rules (Evidence Requirement … Finding Cap)
+ *   - outputFormat:  the ## Output Format JSON schema block
+ *
+ * The file uses a `---` separator between the two sections. If the separator
+ * or the Output Format heading is missing the build fails loudly so the
+ * author knows the shared file is malformed.
+ */
+function loadSharedRules() {
+  const raw = readFileSync(SHARED_RULES_FILE, 'utf8');
+
+  const outputHeadingIdx = raw.indexOf('\n## Output Format');
+  if (outputHeadingIdx === -1) {
+    throw new Error('shared-rules.md: missing "## Output Format" heading');
+  }
+
+  // Everything before the Output Format heading is the rules block.
+  // Trim the trailing `---` separator that sits between the two sections.
+  const rules = raw.slice(0, outputHeadingIdx).replace(/\n---\s*$/, '').trimEnd();
+
+  // The Output Format section itself (heading + JSON block).
+  const outputFormat = raw.slice(outputHeadingIdx + 1).trimEnd();
+
+  if (rules.length === 0) {
+    throw new Error('shared-rules.md: rules section is empty');
+  }
+  if (outputFormat.length === 0) {
+    throw new Error('shared-rules.md: Output Format section is empty');
+  }
+
+  return { rules, outputFormat };
+}
+
+/**
+ * Inject shared content into an agent's markdown:
+ *   1. Shared methodology rules are appended at the end of the agent's
+ *      `## Rules` section (before the `---` + `## Checks` separator).
+ *   2. The shared Output Format block is appended at the very end.
+ *
+ * If the expected markers are not found the build fails so the author
+ * knows the agent file structure has drifted.
+ */
+function injectSharedRules(agentMarkdown, agentKey, shared) {
+  // Find the first `---` that is followed (after optional whitespace) by
+  // `## Checks`. This is the boundary between Rules and Checks.
+  const checksMarker = /\n---\s*\n+## Checks/;
+  const match = checksMarker.exec(agentMarkdown);
+  if (!match) {
+    throw new Error(
+      `embed-skills: agent "${agentKey}" is missing the expected ` +
+      `"---\\n## Checks" boundary after its Rules section`,
+    );
+  }
+
+  const beforeChecks = agentMarkdown.slice(0, match.index);
+  const checksOnward = agentMarkdown.slice(match.index);
+
+  return `${beforeChecks}\n\n${shared.rules}${checksOnward}\n\n${shared.outputFormat}\n`;
+}
+
 function main() {
   // Discover agent files on disk and sanity-check against the canonical set
   // so a newly-added agent without a display name fails the build loudly.
@@ -76,10 +138,14 @@ function main() {
     );
   }
 
-  // Read, escape, and format each agent entry.
+  // Load shared rules once, then inject into every agent.
+  const shared = loadSharedRules();
+
+  // Read, inject shared rules, escape, and format each agent entry.
   const entries = AGENT_ORDER.map(key => {
     const raw = readFileSync(join(AGENTS_DIR, `${key}.md`), 'utf8');
-    const escaped = escapeForTemplateLiteral(raw);
+    const assembled = injectSharedRules(raw, key, shared);
+    const escaped = escapeForTemplateLiteral(assembled);
     const name = DISPLAY_NAMES[key];
     return `  ${JSON.stringify(key)}: {\n    name: ${JSON.stringify(name)},\n    content: \`${escaped}\`,\n  },`;
   });

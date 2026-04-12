@@ -2,8 +2,10 @@
 //
 // The only job of this module is to prepend a short anti-injection preamble
 // to the agent's markdown content. Everything else an agent needs — scope,
-// evidence rules, checks, severity scale, and the JSON `## Output Format`
-// block — already lives inside `skill/agents/<name>.md`.
+// checks, severity scale — lives in each agent's markdown file, while shared
+// methodology rules (Evidence Requirement, Anti-Hallucination, etc.) and
+// the JSON Output Format are defined in skill/shared-rules.md and injected
+// into every agent at build time by scripts/embed-skills.js.
 //
 // Why this file is intentionally tiny:
 //   - skill/SKILL.md describes an orchestration flow that the web backend
@@ -12,8 +14,8 @@
 //     backend is already doing.
 //   - skill/output/report-template.md is the shape of the *final merged*
 //     report, which is the merger's concern, not an individual agent's.
-//   - Re-declaring the output schema or severity scale here would conflict
-//     with the authoritative copies at the bottom of each agent file.
+//   - The anti-injection preamble is kept in code (not markdown) so it
+//     cannot be accidentally modified by editing agent prompts.
 
 // Prepended to every agent's system instruction. Treats everything that
 // arrives in the user message as untrusted data, not instructions.

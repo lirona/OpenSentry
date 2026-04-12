@@ -133,25 +133,7 @@ test("rejects when no API key is configured", async () => {
   assert.equal(res.error, "missing_api_key");
 });
 
-test("prefers legacy chain-specific key over unified key", async () => {
-  let capturedUrl;
-  const restore = stubFetch(async (url) => {
-    capturedUrl = url;
-    return explorerOk([singleFileEntry()]);
-  });
-  try {
-    await fetchSource(ADDR, "base", {
-      ETHERSCAN_API_KEY: "unified-key",
-      BASESCAN_API_KEY: "legacy-base-key",
-    });
-    assert.ok(capturedUrl.includes("apikey=legacy-base-key"));
-    assert.ok(capturedUrl.includes("chainid=8453"));
-  } finally {
-    restore();
-  }
-});
-
-test("falls back to ETHERSCAN_API_KEY when chain-specific key is empty", async () => {
+test("uses ETHERSCAN_API_KEY for all chains", async () => {
   let capturedUrl;
   const restore = stubFetch(async (url) => {
     capturedUrl = url;
