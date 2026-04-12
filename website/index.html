@@ -1294,37 +1294,19 @@
     </div>
   </section>
 
-  <!-- ════ Roadmap ════ -->
-  <section class="roadmap section" id="roadmap">
+  <!-- ════ Public Goods Registration ════ -->
+  <section class="section" id="public-goods" style="background: #000; color: white;">
     <div class="container">
       <div class="section-header">
-        <h2 class="section-title">Roadmap</h2>
+        <h2 class="section-title" style="color: white;">For Public Goods Projects</h2>
+        <p class="section-subtitle" style="color: #aaa;">
+          Beyond protecting individual users, OpenSentry creates ecosystem-wide security benefits. Projects that pass analysis can earn a <strong>certification badge</strong> — a revocable soulbound NFT and visual badge to display on your Dapp.
+          <br><br>
+          Establish a public, on-chain trust signal for the communities interacting with your contracts.
+        </p>
       </div>
-      <div class="roadmap-timeline">
-        <div class="roadmap-item active">
-          <div class="roadmap-dot"></div>
-          <div class="roadmap-label">Phase 1</div>
-          <div class="roadmap-title">Core Engine <span class="roadmap-status">In Progress</span></div>
-          <p class="roadmap-desc">Building the foundational analysis and exploit detection capabilities.</p>
-        </div>
-        <div class="roadmap-item">
-          <div class="roadmap-dot"></div>
-          <div class="roadmap-label">Phase 2</div>
-          <div class="roadmap-title">Early User Testing</div>
-          <p class="roadmap-desc">Launching a public Beta standalone tool for testing and gathering feedback by early users.</p>
-        </div>
-        <div class="roadmap-item">
-          <div class="roadmap-dot"></div>
-          <div class="roadmap-label">Phase 3</div>
-          <div class="roadmap-title">Wallet Extension</div>
-          <p class="roadmap-desc">Building the wallet extension for seamless in-wallet protection.</p>
-        </div>
-        <div class="roadmap-item">
-          <div class="roadmap-dot"></div>
-          <div class="roadmap-label">Phase 4</div>
-          <div class="roadmap-title">API & Developer Access</div>
-          <p class="roadmap-desc">Empower developers with an open-source API.</p>
-        </div>
+      <div style="text-align: center; margin-top: 2rem;">
+        <a href="#" class="btn-primary" onclick="openModal(event)" style="background: #F5F547; color: #000; border: none; padding: 12px 32px; font-weight: 600;">Register Your Project</a>
       </div>
     </div>
   </section>
@@ -1370,20 +1352,20 @@
   <div class="modal-overlay" id="signup-modal">
     <div class="modal">
       <button class="modal-close" onclick="closeModal()">&times;</button>
-      <h3 class="modal-title">Sign Up for Beta</h3>
-      <p class="modal-subtitle">Get early access to audit-grade wallet protection.</p>
+      <h3 class="modal-title">Register Your Public Goods Project</h3>
+      <p class="modal-subtitle">Earn a certification badge and establish trust with your community.</p>
       <form class="modal-form" onsubmit="handleSubmit(event)">
         <div class="form-group">
-          <label>Name</label>
-          <input type="text" name="name" placeholder="Your name" required>
+          <label>Project website</label>
+          <input type="text" name="name" placeholder="https://publicgoods.com" required>
         </div>
         <div class="form-group">
-          <label>Email</label>
-          <input type="email" name="email" placeholder="you@example.com" required>
+          <label>Contact email</label>
+          <input type="email" name="email" placeholder="you@publicgoods.com" required>
         </div>
         <div class="form-group">
-          <label>Anything to add? <span class="optional">(optional)</span></label>
-          <textarea name="message" placeholder="Tell us what you're looking for..."></textarea>
+          <label>What does your project do?</span></label>
+          <textarea name="message" placeholder="Brief description of your project..."></textarea>
         </div>
         <button type="submit" class="btn-primary" id="submit-btn">Sign Up</button>
       </form>
