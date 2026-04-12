@@ -1,0 +1,26 @@
+name = "opensentry"
+compatibility_date = "2026-04-08"
+pages_build_output_dir = "./website"
+
+# ---------------------------------------------------------------------------
+# Environment variables / secrets
+# ---------------------------------------------------------------------------
+# All API keys below are SECRETS and must NOT be committed here.
+#
+# Production: set each one in the Cloudflare dashboard under
+#   Pages project → Settings → Environment variables → "Encrypt" (secret).
+#
+# Local development: create a `.dev.vars` file (gitignored) at the project
+# root with the same keys, e.g.:
+#
+#   GEMINI_API_KEY="..."
+#   ETHERSCAN_API_KEY="..."
+
+# Access inside Pages Functions via `context.env.GEMINI_API_KEY`, etc.
+#
+# Required secret bindings:
+#   - GEMINI_API_KEY       (https://aistudio.google.com/apikey)
+#   - ETHERSCAN_API_KEY
+#
+# v1 does not use KV, D1, R2, Durable Objects, or Queues.
+# ---------------------------------------------------------------------------

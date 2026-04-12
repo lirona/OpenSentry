@@ -1,0 +1,12 @@
+# Copy this file to `.dev.vars` (gitignored) for local `wrangler pages dev`
+# runs. In production, set the same keys in the Cloudflare Pages dashboard
+# under Settings -> Environment variables (marked as Encrypted / Secret).
+
+# --- Gemini (Google AI Studio) ---
+# Get a free key at https://aistudio.google.com/apikey (no credit card).
+GEMINI_API_KEY=""
+
+# --- Etherscan V2 (unified multichain key) ---
+# Etherscan V2 uses ONE key across all supported chains
+# (Ethereum, Base, Arbitrum, Optimism, Polygon, ...).
+ETHERSCAN_API_KEY=""
