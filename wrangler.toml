@@ -18,7 +18,7 @@ pages_build_output_dir = "./website"
 # root with the same keys, e.g.:
 #
 #   ZAI_API_KEY="..."
-#   ZAI_MODEL="glm-5.1"
+#   ZAI_MODEL="glm-4.7-flash"
 #   ANALYZE_IP_COOLDOWN_MS="15000"
 #   ANALYZE_DAILY_CAP="0"
 #   ETHERSCAN_API_KEY="..."

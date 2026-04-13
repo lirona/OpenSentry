@@ -5,8 +5,8 @@
 # --- Z.AI / GLM ---
 # Create an API key at https://z.ai/manage-apikey
 ZAI_API_KEY=""
-# Optional override. Defaults to glm-5.1 in code.
-ZAI_MODEL="glm-5.1"
+# Optional override. Defaults to glm-4.7-flash in code.
+ZAI_MODEL="glm-4.7-flash"
 
 # --- API abuse protection ---
 # Optional per-IP cooldown in milliseconds. Set to 0 to disable.

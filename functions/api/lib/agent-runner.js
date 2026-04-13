@@ -21,7 +21,7 @@
 
 // ---- Z.AI endpoint + request tuning -----------------------------------------
 
-const ZAI_MODEL = 'glm-5.1';
+const ZAI_MODEL = 'glm-4.7-flash';
 const ZAI_URL = 'https://api.z.ai/api/paas/v4/chat/completions';
 
 // Total wall-clock budget per agent, shared across attempts. The 30s Pages

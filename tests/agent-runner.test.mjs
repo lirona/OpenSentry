@@ -163,7 +163,7 @@ test('happy path returns ok:true with parsed result on first attempt', async () 
 
     assert.equal(sentUrl, ZAI_URL);
     assert.equal(sentAuth, 'Bearer test-key');
-    assert.equal(sentBody.model, 'glm-5.1');
+    assert.equal(sentBody.model, 'glm-4.7-flash');
     assert.equal(sentBody.messages[0].role, 'system');
     assert.equal(sentBody.messages[0].content, SYSTEM_PROMPT);
     assert.match(sentBody.messages[1].content, /--- CONTRACT SOURCE CODE/);

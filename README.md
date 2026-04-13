@@ -97,7 +97,7 @@ Edit `.dev.vars` and fill in your keys:
 | Variable | Where to get it |
 |----------|----------------|
 | `ZAI_API_KEY` | [Z.AI API keys](https://z.ai/manage-apikey) |
-| `ZAI_MODEL` | Optional model override. Defaults to `glm-5.1` |
+| `ZAI_MODEL` | Optional model override. Defaults to `glm-4.7-flash` |
 | `ANALYZE_IP_COOLDOWN_MS` | Optional per-IP cooldown in milliseconds. Set `0` to disable |
 | `ANALYZE_DAILY_CAP` | Optional global daily cap. Set `0` to disable |
 | `ETHERSCAN_API_KEY` | [Etherscan](https://etherscan.io/apis) — free tier is sufficient. One key works across all chains via V2 API |
