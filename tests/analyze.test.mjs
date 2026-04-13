@@ -64,6 +64,50 @@ function etherscanOk() {
   };
 }
 
+function etherscanProxyOk() {
+  return {
+    status: '1',
+    message: 'OK',
+    result: [{
+      SourceCode: 'pragma solidity 0.8.20;\ncontract Proxy { fallback() external payable {} }',
+      ABI: '[]',
+      ContractName: 'Proxy',
+      CompilerVersion: 'v0.8.20+commit.a1b79de6',
+      OptimizationUsed: '1',
+      Runs: '200',
+      ConstructorArguments: '',
+      EVMVersion: 'paris',
+      Library: '',
+      LicenseType: 'MIT',
+      Proxy: '1',
+      Implementation: '0x1111111111111111111111111111111111111111',
+      SwarmSource: '',
+    }],
+  };
+}
+
+function etherscanImplementationOk() {
+  return {
+    status: '1',
+    message: 'OK',
+    result: [{
+      SourceCode: 'pragma solidity 0.8.20;\ncontract Impl { function x() external pure returns (uint256) { return 1; } }',
+      ABI: '[]',
+      ContractName: 'Impl',
+      CompilerVersion: 'v0.8.20+commit.a1b79de6',
+      OptimizationUsed: '1',
+      Runs: '200',
+      ConstructorArguments: '',
+      EVMVersion: 'paris',
+      Library: '',
+      LicenseType: 'MIT',
+      Proxy: '0',
+      Implementation: '',
+      SwarmSource: '',
+    }],
+  };
+}
+
 // A valid GLM agent output — all agents return SAFE for simplicity.
 function glmSafe(agentName) {
   return JSON.stringify({
@@ -193,6 +237,9 @@ test('happy path: all agents SAFE → 200 with full report shape', async () => {
     assert.equal(body.contractName, 'USDC');
     assert.equal(body.address, ADDR);
     assert.equal(body.chain, 'ethereum');
+    assert.equal(body.isProxy, false);
+    assert.equal(body.implementationAddress, null);
+    assert.equal(body.implementationContractName, null);
     assert.ok(body.timestamp);
 
     const r = body.report;
@@ -207,6 +254,46 @@ test('happy path: all agents SAFE → 200 with full report shape', async () => {
       assert.equal(s.status, 'completed');
       assert.equal(s.severity, 'SAFE');
     }
+  } finally {
+    restore();
+  }
+});
+
+test('proxy metadata is surfaced in the API response', async () => {
+  let explorerCallCount = 0;
+  const restore = stubFetch(async (url) => {
+    if (url.includes('etherscan.io')) {
+      explorerCallCount++;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => explorerCallCount === 1 ? etherscanProxyOk() : etherscanImplementationOk(),
+      };
+    }
+    if (url.includes('api.z.ai')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [{
+            message: { content: glmSafe('Access Control') },
+            finish_reason: 'stop',
+          }],
+        }),
+      };
+    }
+    throw new Error(`Unexpected fetch URL: ${url}`);
+  });
+  try {
+    const res = await onRequestPost(makeContext({ address: ADDR, chain: 'ethereum' }));
+    assert.equal(res.status, 200);
+
+    const body = await res.json();
+    assert.equal(body.success, true);
+    assert.equal(body.contractName, 'Proxy');
+    assert.equal(body.isProxy, true);
+    assert.equal(body.implementationAddress, '0x1111111111111111111111111111111111111111');
+    assert.equal(body.implementationContractName, 'Impl');
   } finally {
     restore();
   }

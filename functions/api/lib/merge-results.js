@@ -413,6 +413,7 @@ function buildAgentSummaries(processed) {
         severity: 'unknown',
         summary: `Analysis incomplete for ${name}`,
         status: 'failed',
+        failureReason: 'missing agent result',
       };
     }
     // Use the canonical display name rather than the name the caller
@@ -423,6 +424,7 @@ function buildAgentSummaries(processed) {
       severity: p.severity,
       summary: p.summary,
       status: p.status,
+      failureReason: p.status === 'failed' ? p.failReason : null,
     };
   });
 }

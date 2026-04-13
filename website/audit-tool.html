@@ -581,10 +581,13 @@
     // Agent summaries table
     $('#agent-table-grid').innerHTML = (r.agentSummaries || []).map(s => {
       const cls = SEV_CLASS[s.severity] || 'sev-unknown';
+      const summary = s.status === 'failed' && s.failureReason
+        ? `${s.summary} (${s.failureReason})`
+        : s.summary;
       return `<div class="agent-row">
         <div class="agent-row-name">${esc(s.agent)}</div>
         <div><span class="${cls} sev-badge">${esc(s.severity)}</span></div>
-        <div class="agent-row-summary">${esc(s.summary)}</div>
+        <div class="agent-row-summary">${esc(summary)}</div>
       </div>`;
     }).join('');
 
@@ -638,7 +641,7 @@
     if (activeAgentFilter) filtered = filtered.filter(f => f.agents.includes(activeAgentFilter));
 
     if (filtered.length === 0) {
-      $('#findings-list').innerHTML = `<div class="findings-empty">${findings.length === 0 ? 'No issues found. All agents report SAFE.' : 'No findings match the current filter.'}</div>`;
+      $('#findings-list').innerHTML = `<div class="findings-empty">${findings.length === 0 ? emptyFindingsMessage() : 'No findings match the current filter.'}</div>`;
       return;
     }
 
@@ -664,6 +667,30 @@
           </div>
         </div>`;
     }).join('');
+  }
+
+  function emptyFindingsMessage() {
+    const report = currentReport?.report;
+    if (!report) return 'No findings available.';
+
+    const agentSummaries = report.agentSummaries || [];
+    const failedCount = agentSummaries.filter(s => s.status === 'failed').length;
+
+    if (failedCount > 0) {
+      return failedCount === agentSummaries.length
+        ? 'Analysis incomplete. All agents failed.'
+        : `Analysis incomplete. ${failedCount} agent${failedCount === 1 ? '' : 's'} failed.`;
+    }
+
+    if (report.overallSeverity === 'SAFE') {
+      return 'No issues found. All completed agents report SAFE.';
+    }
+
+    if (report.overallSeverity === 'unknown') {
+      return 'No findings available because analysis was incomplete.';
+    }
+
+    return 'No findings available.';
   }
 
   // ── Error rendering ────────────────────────────────────────────────────────

@@ -103,6 +103,9 @@ export async function onRequestPost(context) {
     contractName: sourceResult.contractName,
     address,
     chain,
+    isProxy: sourceResult.isProxy,
+    implementationAddress: sourceResult.implementationAddress,
+    implementationContractName: sourceResult.implementation?.contractName || null,
     timestamp: new Date().toISOString(),
     report,
   });

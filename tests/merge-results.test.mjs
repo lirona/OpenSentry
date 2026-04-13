@@ -375,6 +375,7 @@ test('aggregates: all failed → overall unknown', () => {
     assert.equal(s.status, 'failed');
     assert.equal(s.severity, 'unknown');
     assert.match(s.summary, /^Analysis incomplete for /);
+    assert.equal(s.failureReason, 'HTTP_5XX');
   }
 });
 
@@ -391,8 +392,10 @@ test('agentSummaries: always 8 entries in canonical order, missing → failed', 
     CANONICAL_AGENTS.map(a => a.name),
   );
   assert.equal(report.agentSummaries[0].status, 'completed');
+  assert.equal(report.agentSummaries[0].failureReason, null);
   for (let i = 1; i < 8; i++) {
     assert.equal(report.agentSummaries[i].status, 'failed');
+    assert.equal(report.agentSummaries[i].failureReason, 'missing agent result');
   }
 });
 
