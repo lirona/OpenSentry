@@ -3,7 +3,7 @@
 // Run:  node --test tests/analyze.test.mjs
 //
 // These tests import onRequestPost directly and call it with a mock
-// Cloudflare Pages context object. Both fetchSource and Gemini are stubbed
+// Cloudflare Pages context object. Both fetchSource and GLM are stubbed
 // via globalThis.fetch, so no network access is needed.
 
 import test from 'node:test';
@@ -16,7 +16,7 @@ import { onRequestPost } from '../functions/api/analyze.js';
 const ADDR = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
 
 const ENV = {
-  GEMINI_API_KEY: 'test-gemini-key',
+  ZAI_API_KEY: 'test-zai-key',
   ETHERSCAN_API_KEY: 'test-etherscan-key',
 };
 
@@ -64,8 +64,8 @@ function etherscanOk() {
   };
 }
 
-// A valid Gemini agent output — all agents return SAFE for simplicity.
-function geminiSafe(agentName) {
+// A valid GLM agent output — all agents return SAFE for simplicity.
+function glmSafe(agentName) {
   return JSON.stringify({
     agent: agentName,
     severity: 'SAFE',
@@ -80,13 +80,13 @@ const AGENT_NAMES = [
   'MEV & Tx Safety', 'Code Quality', 'Transparency', 'Governance',
 ];
 
-// Build a combined stub that handles both Etherscan V2 and Gemini calls.
+// Build a combined stub that handles both Etherscan V2 and GLM calls.
 function stubAll(options = {}) {
   const {
     etherscanResponse = etherscanOk(),
-    geminiHandler = null, // if null, default to SAFE for all agents
+    glmHandler = null, // if null, default to SAFE for all agents
   } = options;
-  let geminiCallIndex = 0;
+  let glmCallIndex = 0;
 
   return stubFetch(async (url) => {
     // Etherscan V2 calls go to api.etherscan.io/v2
@@ -97,17 +97,17 @@ function stubAll(options = {}) {
         json: async () => etherscanResponse,
       };
     }
-    // Gemini calls
-    if (url.includes('generativelanguage.googleapis.com')) {
-      if (geminiHandler) return geminiHandler(url, geminiCallIndex++);
-      const name = AGENT_NAMES[geminiCallIndex++ % AGENT_NAMES.length];
+    // GLM calls
+    if (url.includes('api.z.ai')) {
+      if (glmHandler) return glmHandler(url, glmCallIndex++);
+      const name = AGENT_NAMES[glmCallIndex++ % AGENT_NAMES.length];
       return {
         ok: true,
         status: 200,
         json: async () => ({
-          candidates: [{
-            content: { parts: [{ text: geminiSafe(name) }] },
-            finishReason: 'STOP',
+          choices: [{
+            message: { content: glmSafe(name) },
+            finish_reason: 'stop',
           }],
         }),
       };
@@ -217,7 +217,7 @@ test('happy path: all agents SAFE → 200 with full report shape', async () => {
 test('some agents fail → report still returns with partial results', async () => {
   let callIdx = 0;
   const restore = stubAll({
-    geminiHandler: () => {
+    glmHandler: () => {
       const i = callIdx++;
       // First agent returns a WARNING finding; the rest fail with 500.
       if (i === 0) {
@@ -225,25 +225,23 @@ test('some agents fail → report still returns with partial results', async () 
           ok: true,
           status: 200,
           json: async () => ({
-            candidates: [{
-              content: {
-                parts: [{
-                  text: JSON.stringify({
-                    agent: 'Access Control',
+            choices: [{
+              message: {
+                content: JSON.stringify({
+                  agent: 'Access Control',
+                  severity: 'WARNING',
+                  summary: 'One issue found.',
+                  findings: [{
+                    check: 'Missing initializer guard',
                     severity: 'WARNING',
-                    summary: 'One issue found.',
-                    findings: [{
-                      check: 'Missing initializer guard',
-                      severity: 'WARNING',
-                      location: 'USDC.sol:1',
-                      summary: 'No guard on init.',
-                      detail: 'The init function is missing a guard.',
-                      user_impact: 'Anyone can call init.',
-                    }],
-                  }),
-                }],
+                    location: 'USDC.sol:1',
+                    summary: 'No guard on init.',
+                    detail: 'The init function is missing a guard.',
+                    user_impact: 'Anyone can call init.',
+                  }],
+                }),
               },
-              finishReason: 'STOP',
+              finish_reason: 'stop',
             }],
           }),
         };

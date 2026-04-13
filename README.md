@@ -18,9 +18,9 @@ OpenSentry orchestrates specialized AI security agents that analyze a smart cont
 
 **Supported chains:** Ethereum, Base, Arbitrum, Optimism, Polygon
 
-**Stack:** Cloudflare Pages (static frontend) + Cloudflare Pages Functions (serverless backend) + Google Gemini API (Gemini 2.5 Flash, free tier) + Etherscan V2 API (contract source fetching)
+**Stack:** Cloudflare Pages (static frontend) + Cloudflare Pages Functions (serverless backend) + Z.AI GLM API + Etherscan V2 API (contract source fetching)
 
-**Note:** Current POC uses Gemini free tier, next version will use a more robust model for better results.
+**Note:** Current POC uses Z.AI GLM free tier, next version will use a more robust model for better results.
 
 ---
 
@@ -38,7 +38,7 @@ OpenSentry/
 │       ├── _middleware.js            # CORS, rate limiting, request validation
 │       └── lib/
 │           ├── fetch-source.js      # Fetch verified source from Etherscan V2
-│           ├── agent-runner.js      # Call Gemini per agent with retry + timeout
+│           ├── agent-runner.js      # Call GLM per agent with retry + timeout
 │           ├── prompt-wrapper.js    # Anti-injection preamble + agent prompt
 │           ├── merge-results.js     # Dedup, quality gate, sort, assign IDs
 │           ├── skill-loader.js      # (see embedded-skills.js below)
@@ -96,7 +96,10 @@ Edit `.dev.vars` and fill in your keys:
 
 | Variable | Where to get it |
 |----------|----------------|
-| `GEMINI_API_KEY` | [Google AI Studio](https://aistudio.google.com/apikey) — free, no credit card |
+| `ZAI_API_KEY` | [Z.AI API keys](https://z.ai/manage-apikey) |
+| `ZAI_MODEL` | Optional model override. Defaults to `glm-5.1` |
+| `ANALYZE_IP_COOLDOWN_MS` | Optional per-IP cooldown in milliseconds. Set `0` to disable |
+| `ANALYZE_DAILY_CAP` | Optional global daily cap. Set `0` to disable |
 | `ETHERSCAN_API_KEY` | [Etherscan](https://etherscan.io/apis) — free tier is sufficient. One key works across all chains via V2 API |
 
 ### 3. Build embedded skills
@@ -160,7 +163,7 @@ Browser                    Cloudflare Pages Functions              External
                         └────┬─────┘  └────┬─────┘  └────┬─────┘  Promise.allSettled
                              │             │             │
                              ▼             ▼             ▼
-                          Gemini 2.5 Flash API (JSON mode)
+                          GLM API (JSON mode)
                               │
                               ▼
                      ┌──────────────────┐
@@ -175,11 +178,11 @@ Browser                    Cloudflare Pages Functions              External
 
 ### Pipeline summary
 
-1. **Middleware** — CORS (opensentry.tech + localhost), IP rate limiting (1 req/60s), global daily cap (~30/day), POST + JSON validation
+1. **Middleware** — CORS (opensentry.tech + localhost), configurable abuse protection, POST + JSON validation
 2. **Orchestrator** — validates input, fetches source, fans out 8 agents, merges results
 3. **Fetch source** — Etherscan V2 multichain API, handles single/multi-file, proxies, retries on rate limit
 4. **Prompt wrapper** — prepends anti-injection preamble to each agent's markdown prompt
-5. **Agent runner** — calls Gemini with 25s budget, 1 retry for transient errors, validates output schema
+5. **Agent runner** — calls GLM with 25s budget, 1 retry for transient errors, validates output schema
 6. **Merger** — classifies results, quality-gates findings (citation check, contradiction filter, finding cap), deduplicates by root cause (location + Jaccard check-name similarity), resolves severity conflicts, sorts CRITICAL > WARNING > INFO, assigns OS-001/002/... IDs
 
 ---
@@ -190,19 +193,40 @@ Browser                    Cloudflare Pages Functions              External
 
 ```bash
 npm run build          # regenerate embedded-skills.js
-npm run deploy         # deploy via wrangler
+npm run deploy         # direct-upload the `website/` bundle to the `opensentry` Pages project
 ```
 
-Set the following **encrypted** environment variables in the Cloudflare Pages dashboard (Settings > Environment variables):
+Recommended project settings in Cloudflare:
 
-- `GEMINI_API_KEY`
+- Framework preset: `None`
+- Build command: `npm run build`
+- Build output directory: `website`
+- Root directory: repository root
+
+Set the following environment variables in the Cloudflare Pages dashboard (`Workers & Pages -> <project> -> Settings -> Variables and Secrets`):
+
+- `ZAI_API_KEY`
+- `ZAI_MODEL` (optional)
+- `ANALYZE_IP_COOLDOWN_MS` (optional)
+- `ANALYZE_DAILY_CAP` (optional)
 - `ETHERSCAN_API_KEY`
 
-### Gemini free tier constraints
+Direct upload via Wrangler:
 
-- 10 requests/minute — each analysis uses 8 (one per agent)
-- 250 requests/day — allows ~31 analyses/day
-- The middleware and frontend enforce these limits client-side and server-side
+```bash
+npm install
+npm run build
+npm run deploy
+```
+
+Git-based deployment via Cloudflare Pages:
+
+1. Connect the GitHub repository in Cloudflare Pages.
+2. Set the production branch to the branch you want to deploy from.
+3. Use build command `npm run build`.
+4. Use build output directory `website`.
+5. Add the variables/secrets listed above.
+6. Deploy and verify that `/api/analyze` responds from Pages Functions.
 
 ---
 
@@ -214,7 +238,7 @@ Set the following **encrypted** environment variables in the Cloudflare Pages da
 - CORS is restricted to `opensentry.tech` and `localhost`
 - Error responses never leak API keys or stack traces
 - `embedded-skills.js` is gitignored (contains prompt IP generated from `skill/agents/`)
-- Restrict your Gemini API key in [Google AI Studio](https://aistudio.google.com/apikey) to `opensentry.tech` referrer before going live
+- Configure provider-side limits in your Z.AI dashboard and use the optional middleware env vars for app-side abuse protection
 
 
 ---

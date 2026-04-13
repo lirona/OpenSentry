@@ -2,10 +2,9 @@
 //
 // Responsibilities:
 //   1. CORS — opensentry.tech + localhost origins, preflight support
-//   2. IP rate limiting — 1 analysis per IP per 60 s (Gemini 10 RPM)
-//   3. Global daily cap — ~30 analyses/day (Gemini 250 RPD / 8 agents)
-//   4. Request validation — POST + application/json for /api/analyze
-//   5. Error handling — unhandled exceptions → clean 500
+//   2. Abuse protection — configurable per-IP cooldown and optional daily cap
+//   3. Request validation — POST + application/json for /api/analyze
+//   4. Error handling — unhandled exceptions → clean 500
 //
 // Rate-limit state lives in module-scope Maps. Because Cloudflare Workers
 // instances are ephemeral and non-shared, this is best-effort — enough for
@@ -34,7 +33,7 @@ function corsHeaders(origin) {
   };
 }
 
-// ---- Rate limiting ---------------------------------------------------------
+// ---- Abuse protection ------------------------------------------------------
 
 // Per-IP: timestamp of last accepted analysis request.
 const ipLastRequest = new Map();
@@ -43,53 +42,14 @@ const ipLastRequest = new Map();
 let dailyCount = 0;
 let dailyResetDate = todayUTC();
 
-const IP_COOLDOWN_MS = 60_000;       // 1 request per IP per 60 s
-const DAILY_CAP = 30;                // ~240 agent calls / 250 RPD
+// Defaults are intentionally conservative and provider-agnostic. They protect
+// the endpoint from rapid abuse out of the box without baking any specific
+// vendor quota assumptions into the code.
+const DEFAULT_IP_COOLDOWN_MS = 15_000;
+const DEFAULT_DAILY_CAP = 0;
 
 function todayUTC() {
   return new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
-}
-
-function checkRateLimit(ip) {
-  // Roll the daily counter at midnight UTC.
-  const today = todayUTC();
-  if (today !== dailyResetDate) {
-    dailyCount = 0;
-    dailyResetDate = today;
-    ipLastRequest.clear(); // also purge stale IP entries
-  }
-
-  // Global daily cap.
-  if (dailyCount >= DAILY_CAP) {
-    return {
-      blocked: true,
-      status: 429,
-      error: 'daily_limit',
-      message: `Daily analysis limit reached (${DAILY_CAP}). Resets at midnight UTC.`,
-      retryAfterSec: secondsUntilMidnightUTC(),
-    };
-  }
-
-  // Per-IP cooldown.
-  const now = Date.now();
-  const last = ipLastRequest.get(ip);
-  if (last && now - last < IP_COOLDOWN_MS) {
-    const waitSec = Math.ceil((IP_COOLDOWN_MS - (now - last)) / 1000);
-    return {
-      blocked: true,
-      status: 429,
-      error: 'ip_cooldown',
-      message: `Please wait ${waitSec}s before submitting another analysis.`,
-      retryAfterSec: waitSec,
-    };
-  }
-
-  return { blocked: false };
-}
-
-function recordRequest(ip) {
-  ipLastRequest.set(ip, Date.now());
-  dailyCount++;
 }
 
 function secondsUntilMidnightUTC() {
@@ -98,10 +58,77 @@ function secondsUntilMidnightUTC() {
   return Math.ceil((midnight - now) / 1000);
 }
 
+function parsePositiveInt(raw, fallback) {
+  if (raw == null || raw === '') return fallback;
+  const value = Number.parseInt(String(raw), 10);
+  if (!Number.isFinite(value) || value < 0) return fallback;
+  return value;
+}
+
+function getRateLimitConfig(env) {
+  // Env values are optional and parsed leniently so bad config falls back to
+  // safe defaults instead of accidentally disabling protection or crashing.
+  return {
+    ipCooldownMs: parsePositiveInt(env?.ANALYZE_IP_COOLDOWN_MS, DEFAULT_IP_COOLDOWN_MS),
+    dailyCap: parsePositiveInt(env?.ANALYZE_DAILY_CAP, DEFAULT_DAILY_CAP),
+  };
+}
+
+function checkRateLimit(ip, config) {
+  // Roll the daily counter at midnight UTC.
+  const today = todayUTC();
+  if (today !== dailyResetDate) {
+    dailyCount = 0;
+    dailyResetDate = today;
+    ipLastRequest.clear(); // also purge stale IP entries
+  }
+
+  // Optional global daily cap.
+  if (config.dailyCap > 0 && dailyCount >= config.dailyCap) {
+    return {
+      blocked: true,
+      status: 429,
+      error: 'daily_limit',
+      message: `Daily analysis limit reached (${config.dailyCap}). Resets at midnight UTC.`,
+      retryAfterSec: secondsUntilMidnightUTC(),
+    };
+  }
+
+  // Optional per-IP cooldown.
+  if (config.ipCooldownMs > 0) {
+    const now = Date.now();
+    const last = ipLastRequest.get(ip);
+    if (last && now - last < config.ipCooldownMs) {
+      const waitSec = Math.ceil((config.ipCooldownMs - (now - last)) / 1000);
+      return {
+        blocked: true,
+        status: 429,
+        error: 'ip_cooldown',
+        message: `Please wait ${waitSec}s before submitting another analysis.`,
+        retryAfterSec: waitSec,
+      };
+    }
+  }
+
+  return { blocked: false };
+}
+
+function recordRequest(ip, config) {
+  // Record BEFORE the handler runs so that even a slow/failed analysis still
+  // counts toward the configured window, preventing rapid retries of broken
+  // requests from bypassing the app-level protection.
+  if (config.ipCooldownMs > 0) {
+    ipLastRequest.set(ip, Date.now());
+  }
+  if (config.dailyCap > 0) {
+    dailyCount++;
+  }
+}
+
 // ---- Middleware entry point -------------------------------------------------
 
 export async function onRequest(context) {
-  const { request } = context;
+  const { request, env } = context;
   const url = new URL(request.url);
   const origin = request.headers.get('Origin') || '';
   const allowed = isAllowedOrigin(origin);
@@ -132,9 +159,10 @@ export async function onRequest(context) {
       return jsonResponse(415, { error: 'unsupported_media_type', message: 'Content-Type must be application/json.' }, allowed ? origin : null);
     }
 
-    // Rate limiting (checked before forwarding to the handler).
+    // Abuse protection (checked before forwarding to the handler).
     const ip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'unknown';
-    const limit = checkRateLimit(ip);
+    const config = getRateLimitConfig(env);
+    const limit = checkRateLimit(ip, config);
     if (limit.blocked) {
       return jsonResponse(limit.status, {
         error: limit.error,
@@ -144,8 +172,8 @@ export async function onRequest(context) {
 
     // Record BEFORE the handler runs so that even a slow/failed analysis
     // still counts toward the rate window (preventing rapid retries of
-    // broken requests from burning through the Gemini quota).
-    recordRequest(ip);
+    // broken requests from burning through quota).
+    recordRequest(ip,config);
   }
 
   // ---- Forward to route handler with error boundary -------------------------
@@ -193,4 +221,8 @@ export function __resetRateLimits() {
   dailyResetDate = todayUTC();
 }
 
-export { DAILY_CAP as __DAILY_CAP, IP_COOLDOWN_MS as __IP_COOLDOWN_MS };
+export {
+  DEFAULT_DAILY_CAP as __DEFAULT_DAILY_CAP,
+  DEFAULT_IP_COOLDOWN_MS as __DEFAULT_IP_COOLDOWN_MS,
+  getRateLimitConfig as __getRateLimitConfig,
+};

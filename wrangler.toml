@@ -3,24 +3,36 @@ compatibility_date = "2026-04-08"
 pages_build_output_dir = "./website"
 
 # ---------------------------------------------------------------------------
-# Environment variables / secrets
+# Cloudflare Pages configuration
 # ---------------------------------------------------------------------------
-# All API keys below are SECRETS and must NOT be committed here.
+# This project deploys:
+#   - static assets from `./website`
+#   - serverless API routes from `./functions`
 #
-# Production: set each one in the Cloudflare dashboard under
-#   Pages project → Settings → Environment variables → "Encrypt" (secret).
+# The Pages Functions code reads environment variables from `context.env`.
+# Keep secrets out of git. Configure them in the Cloudflare dashboard:
+#
+#   Workers & Pages → <project> → Settings → Variables and Secrets
 #
 # Local development: create a `.dev.vars` file (gitignored) at the project
 # root with the same keys, e.g.:
 #
-#   GEMINI_API_KEY="..."
+#   ZAI_API_KEY="..."
+#   ZAI_MODEL="glm-5.1"
+#   ANALYZE_IP_COOLDOWN_MS="15000"
+#   ANALYZE_DAILY_CAP="0"
 #   ETHERSCAN_API_KEY="..."
-
-# Access inside Pages Functions via `context.env.GEMINI_API_KEY`, etc.
+#
+# Access inside Pages Functions via `context.env.ZAI_API_KEY`, etc.
 #
 # Required secret bindings:
-#   - GEMINI_API_KEY       (https://aistudio.google.com/apikey)
+#   - ZAI_API_KEY
 #   - ETHERSCAN_API_KEY
+#
+# Optional plain-text / secret bindings:
+#   - ZAI_MODEL
+#   - ANALYZE_IP_COOLDOWN_MS
+#   - ANALYZE_DAILY_CAP
 #
 # v1 does not use KV, D1, R2, Durable Objects, or Queues.
 # ---------------------------------------------------------------------------

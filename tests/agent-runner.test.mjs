@@ -3,7 +3,7 @@
 // Run:  node --test tests/agent-runner.test.mjs
 //
 // Every test stubs `globalThis.fetch` to exercise one branch of the runner
-// without hitting Gemini. The runner's retry/timeout constants are read
+// without hitting GLM. The runner's retry/timeout constants are read
 // through the `__internal` export so the assertions stay in sync if tuning
 // values change later.
 
@@ -12,11 +12,11 @@ import assert from 'node:assert/strict';
 
 import { runAgent, __internal } from '../functions/api/lib/agent-runner.js';
 
-const { ERROR_CODES, RETRYABLE_CODES, GEMINI_URL, buildUserMessage, validateAgentOutput } = __internal;
+const { ERROR_CODES, RETRYABLE_CODES, ZAI_URL, buildUserMessage, validateAgentOutput, stripThinkTags } = __internal;
 
 // ---- helpers ---------------------------------------------------------------
 
-const ENV = { GEMINI_API_KEY: 'test-key' };
+const ENV = { ZAI_API_KEY: 'test-key' };
 const KEY = 'access-control';
 const SYSTEM_PROMPT = 'PREAMBLE\n\nAGENT BODY';
 const SOURCE = '// SPDX-License-Identifier: MIT\npragma solidity 0.8.20;\ncontract C { function f() public {} }';
@@ -33,31 +33,30 @@ function stubFetch(handler) {
   return () => { globalThis.fetch = original; };
 }
 
-// Build a valid Gemini success envelope that embeds `agentJson` as the
-// JSON-mode candidate text.
-function geminiOk(agentJson) {
+function glmOk(agentJson, extra = {}) {
   return {
     ok: true,
     status: 200,
     statusText: 'OK',
     json: async () => ({
-      candidates: [
+      choices: [
         {
-          content: { parts: [{ text: JSON.stringify(agentJson) }] },
-          finishReason: 'STOP',
+          message: { content: JSON.stringify(agentJson) },
+          finish_reason: 'stop',
         },
       ],
+      ...extra,
     }),
     text: async () => '',
   };
 }
 
-function geminiHttpError(status, geminiStatus, message) {
+function glmHttpError(status, message) {
   return {
     ok: false,
     status,
     statusText: message || 'ERR',
-    json: async () => ({ error: { code: status, status: geminiStatus, message: message || 'bad' } }),
+    json: async () => ({ error: { message: message || 'bad' } }),
     text: async () => 'bad',
   };
 }
@@ -104,10 +103,10 @@ test('throws on empty source', async () => {
   );
 });
 
-test('throws when env.GEMINI_API_KEY is missing', async () => {
+test('throws when env.ZAI_API_KEY is missing', async () => {
   await assert.rejects(
     () => runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, {}),
-    /GEMINI_API_KEY is missing/,
+    /ZAI_API_KEY is missing/,
   );
 });
 
@@ -142,12 +141,14 @@ test('happy path returns ok:true with parsed result on first attempt', async () 
   let callCount = 0;
   let sentBody = null;
   let sentUrl = null;
+  let sentAuth = null;
 
   const restore = stubFetch(async (url, init) => {
     callCount++;
     sentUrl = url;
+    sentAuth = init.headers.authorization;
     sentBody = JSON.parse(init.body);
-    return geminiOk(validAgentOutput());
+    return glmOk(validAgentOutput());
   });
 
   try {
@@ -160,12 +161,32 @@ test('happy path returns ok:true with parsed result on first attempt', async () 
     assert.equal(out.result.findings.length, 1);
     assert.equal(callCount, 1);
 
-    // Wire format smoke checks.
-    assert.ok(sentUrl.startsWith(GEMINI_URL + '?key='));
-    assert.equal(sentBody.system_instruction.parts[0].text, SYSTEM_PROMPT);
-    assert.match(sentBody.contents[0].parts[0].text, /--- CONTRACT SOURCE CODE/);
-    assert.equal(sentBody.generationConfig.temperature, 0);
-    assert.equal(sentBody.generationConfig.responseMimeType, 'application/json');
+    assert.equal(sentUrl, ZAI_URL);
+    assert.equal(sentAuth, 'Bearer test-key');
+    assert.equal(sentBody.model, 'glm-5.1');
+    assert.equal(sentBody.messages[0].role, 'system');
+    assert.equal(sentBody.messages[0].content, SYSTEM_PROMPT);
+    assert.match(sentBody.messages[1].content, /--- CONTRACT SOURCE CODE/);
+    assert.equal(sentBody.temperature, 0);
+    assert.deepEqual(sentBody.response_format, { type: 'json_object' });
+  } finally {
+    restore();
+  }
+});
+
+test('env.ZAI_MODEL overrides the default model', async () => {
+  let sentBody = null;
+  const restore = stubFetch(async (_url, init) => {
+    sentBody = JSON.parse(init.body);
+    return glmOk(validAgentOutput());
+  });
+  try {
+    const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, {
+      ZAI_API_KEY: 'test-key',
+      ZAI_MODEL: 'glm-5-turbo',
+    });
+    assert.equal(out.ok, true);
+    assert.equal(sentBody.model, 'glm-5-turbo');
   } finally {
     restore();
   }
@@ -177,7 +198,7 @@ test('HTTP 429 maps to RATE_LIMIT and does NOT retry', async () => {
   let calls = 0;
   const restore = stubFetch(async () => {
     calls++;
-    return geminiHttpError(429, 'RESOURCE_EXHAUSTED', 'quota exceeded');
+    return glmHttpError(429, 'quota exceeded');
   });
   try {
     const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, ENV);
@@ -185,17 +206,17 @@ test('HTTP 429 maps to RATE_LIMIT and does NOT retry', async () => {
     assert.equal(out.error.code, ERROR_CODES.RATE_LIMIT);
     assert.equal(out.error.httpStatus, 429);
     assert.equal(out.attempts, 1);
-    assert.equal(calls, 1, 'rate limit must not trigger a retry');
+    assert.equal(calls, 1);
   } finally {
     restore();
   }
 });
 
-test('HTTP 400 INVALID_ARGUMENT maps to INPUT_TOO_LARGE and does NOT retry', async () => {
+test('HTTP 400 oversized input maps to INPUT_TOO_LARGE and does NOT retry', async () => {
   let calls = 0;
   const restore = stubFetch(async () => {
     calls++;
-    return geminiHttpError(400, 'INVALID_ARGUMENT', 'payload too large');
+    return glmHttpError(400, 'maximum context length exceeded');
   });
   try {
     const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, ENV);
@@ -213,7 +234,7 @@ test('HTTP 403 maps to HTTP_ERROR and does NOT retry', async () => {
   let calls = 0;
   const restore = stubFetch(async () => {
     calls++;
-    return geminiHttpError(403, 'PERMISSION_DENIED', 'bad key');
+    return glmHttpError(403, 'bad key');
   });
   try {
     const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, ENV);
@@ -226,66 +247,42 @@ test('HTTP 403 maps to HTTP_ERROR and does NOT retry', async () => {
   }
 });
 
-test('promptFeedback.blockReason maps to SAFETY_BLOCKED and does NOT retry', async () => {
-  let calls = 0;
-  const restore = stubFetch(async () => {
-    calls++;
-    return {
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      json: async () => ({ promptFeedback: { blockReason: 'SAFETY' } }),
-    };
-  });
-  try {
-    const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, ENV);
-    assert.equal(out.ok, false);
-    assert.equal(out.error.code, ERROR_CODES.SAFETY_BLOCKED);
-    assert.equal(out.error.blockReason, 'SAFETY');
-    assert.equal(calls, 1);
-  } finally {
-    restore();
-  }
-});
-
-test('candidate finishReason=SAFETY maps to SAFETY_BLOCKED', async () => {
+test('finish_reason=sensitive maps to SAFETY_BLOCKED', async () => {
   const restore = stubFetch(async () => ({
     ok: true,
     status: 200,
     statusText: 'OK',
     json: async () => ({
-      candidates: [{ content: { parts: [{ text: '{}' }] }, finishReason: 'SAFETY' }],
+      choices: [{ message: { content: '{}' }, finish_reason: 'sensitive' }],
     }),
   }));
   try {
     const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, ENV);
     assert.equal(out.ok, false);
     assert.equal(out.error.code, ERROR_CODES.SAFETY_BLOCKED);
-    assert.equal(out.error.finishReason, 'SAFETY');
+    assert.equal(out.error.finishReason, 'sensitive');
   } finally {
     restore();
   }
 });
 
-test('candidate finishReason=RECITATION maps to SAFETY_BLOCKED', async () => {
+test('response without choices maps to PARSE_FAILED', async () => {
   const restore = stubFetch(async () => ({
     ok: true,
     status: 200,
-    json: async () => ({
-      candidates: [{ content: { parts: [{ text: '{}' }] }, finishReason: 'RECITATION' }],
-    }),
+    statusText: 'OK',
+    json: async () => ({}),
   }));
   try {
     const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, ENV);
     assert.equal(out.ok, false);
-    assert.equal(out.error.code, ERROR_CODES.SAFETY_BLOCKED);
-    assert.equal(out.error.finishReason, 'RECITATION');
+    assert.equal(out.error.code, ERROR_CODES.PARSE_FAILED);
   } finally {
     restore();
   }
 });
 
-test('malformed JSON in candidate text maps to PARSE_FAILED and does NOT retry', async () => {
+test('malformed JSON in message content maps to PARSE_FAILED and does NOT retry', async () => {
   let calls = 0;
   const restore = stubFetch(async () => {
     calls++;
@@ -293,7 +290,7 @@ test('malformed JSON in candidate text maps to PARSE_FAILED and does NOT retry',
       ok: true,
       status: 200,
       json: async () => ({
-        candidates: [{ content: { parts: [{ text: '{ this is not json' }] }, finishReason: 'STOP' }],
+        choices: [{ message: { content: '{ this is not json' }, finish_reason: 'stop' }],
       }),
     };
   });
@@ -301,7 +298,26 @@ test('malformed JSON in candidate text maps to PARSE_FAILED and does NOT retry',
     const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, ENV);
     assert.equal(out.ok, false);
     assert.equal(out.error.code, ERROR_CODES.PARSE_FAILED);
-    assert.equal(calls, 1, 'parse failures are deterministic at temperature=0 — do not retry');
+    assert.equal(calls, 1);
+  } finally {
+    restore();
+  }
+});
+
+test('think tags are stripped before JSON parsing', async () => {
+  const restore = stubFetch(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      choices: [{
+        message: { content: `<think>internal chain of thought</think>\n${JSON.stringify(validAgentOutput())}` },
+        finish_reason: 'stop',
+      }],
+    }),
+  }));
+  try {
+    const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, ENV);
+    assert.equal(out.ok, true);
   } finally {
     restore();
   }
@@ -309,8 +325,8 @@ test('malformed JSON in candidate text maps to PARSE_FAILED and does NOT retry',
 
 test('schema violation maps to VALIDATION_FAILED', async () => {
   const bad = validAgentOutput();
-  delete bad.findings[0].user_impact; // drop a required finding field
-  const restore = stubFetch(async () => geminiOk(bad));
+  delete bad.findings[0].user_impact;
+  const restore = stubFetch(async () => glmOk(bad));
   try {
     const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, ENV);
     assert.equal(out.ok, false);
@@ -323,7 +339,7 @@ test('schema violation maps to VALIDATION_FAILED', async () => {
 
 test('bad top-level severity maps to VALIDATION_FAILED', async () => {
   const bad = validAgentOutput({ severity: 'HIGH' });
-  const restore = stubFetch(async () => geminiOk(bad));
+  const restore = stubFetch(async () => glmOk(bad));
   try {
     const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, ENV);
     assert.equal(out.ok, false);
@@ -340,8 +356,8 @@ test('HTTP 5xx once then success succeeds on attempt 2', async () => {
   let calls = 0;
   const restore = stubFetch(async () => {
     calls++;
-    if (calls === 1) return geminiHttpError(503, 'UNAVAILABLE', 'temporary');
-    return geminiOk(validAgentOutput());
+    if (calls === 1) return glmHttpError(503, 'temporary');
+    return glmOk(validAgentOutput());
   });
   try {
     const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, ENV);
@@ -357,7 +373,7 @@ test('HTTP 5xx twice fails with attempts=2', async () => {
   let calls = 0;
   const restore = stubFetch(async () => {
     calls++;
-    return geminiHttpError(502, 'UNAVAILABLE', 'gateway down');
+    return glmHttpError(502, 'gateway down');
   });
   try {
     const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, ENV);
@@ -375,7 +391,7 @@ test('network error (fetch throws non-abort) is retryable', async () => {
   const restore = stubFetch(async () => {
     calls++;
     if (calls === 1) throw new Error('ECONNRESET');
-    return geminiOk(validAgentOutput());
+    return glmOk(validAgentOutput());
   });
   try {
     const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, ENV);
@@ -387,12 +403,9 @@ test('network error (fetch throws non-abort) is retryable', async () => {
   }
 });
 
-// ---- timeout via AbortController -------------------------------------------
+// ---- timeout via AbortController ------------------------------------------
 
 test('AbortError during fetch maps to TIMEOUT', async () => {
-  // Simulate an AbortController.abort() firing: throw a DOMException-like
-  // error with name === 'AbortError'. The runner's signal is what would
-  // trigger this in production; here we just raise it directly.
   const restore = stubFetch(async () => {
     const err = new Error('aborted');
     err.name = 'AbortError';
@@ -402,7 +415,6 @@ test('AbortError during fetch maps to TIMEOUT', async () => {
     const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, ENV);
     assert.equal(out.ok, false);
     assert.equal(out.error.code, ERROR_CODES.TIMEOUT);
-    // Timeout is retryable, so both attempts abort → attempts === 2.
     assert.equal(out.attempts, 2);
   } finally {
     restore();
@@ -416,7 +428,6 @@ test('RETRYABLE_CODES contains only transient failures', () => {
     [...RETRYABLE_CODES].sort(),
     [ERROR_CODES.HTTP_5XX, ERROR_CODES.NETWORK_ERROR, ERROR_CODES.TIMEOUT].sort(),
   );
-  // And explicitly NOT rate-limit, input-too-large, safety, parse, validation.
   assert.ok(!RETRYABLE_CODES.has(ERROR_CODES.RATE_LIMIT));
   assert.ok(!RETRYABLE_CODES.has(ERROR_CODES.INPUT_TOO_LARGE));
   assert.ok(!RETRYABLE_CODES.has(ERROR_CODES.SAFETY_BLOCKED));
@@ -451,4 +462,8 @@ test('validateAgentOutput rejects bad finding severity', () => {
     }],
   });
   assert.match(msg, /findings\[0\]\.severity is invalid/);
+});
+
+test('stripThinkTags removes a leading think block', () => {
+  assert.equal(stripThinkTags('<think>secret</think>\n{"ok":true}'), '{"ok":true}');
 });
