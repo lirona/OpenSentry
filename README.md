@@ -18,9 +18,9 @@ OpenSentry orchestrates specialized AI security agents that analyze a smart cont
 
 **Supported chains:** Ethereum, Base, Arbitrum, Optimism, Polygon
 
-**Stack:** Cloudflare Pages (static frontend) + Cloudflare Pages Functions (serverless backend) + Z.AI GLM API + Etherscan V2 API (contract source fetching)
+**Stack:** Cloudflare Pages (static frontend) + Cloudflare Pages Functions (serverless backend) + Google Gemini API + Etherscan V2 API (contract source fetching)
 
-**Note:** Current POC uses Z.AI GLM free tier, next version will use a more robust model for better results.
+**Note:** Current POC uses free tier, next version will use a more robust model for better results.
 
 ---
 
@@ -38,7 +38,7 @@ OpenSentry/
 │       ├── _middleware.js            # CORS, rate limiting, request validation
 │       └── lib/
 │           ├── fetch-source.js      # Fetch verified source from Etherscan V2
-│           ├── agent-runner.js      # Call GLM per agent with retry + timeout
+│           ├── agent-runner.js      # Call the AI model per agent with retry + timeout
 │           ├── prompt-wrapper.js    # Anti-injection preamble + agent prompt
 │           ├── merge-results.js     # Dedup, quality gate, sort, assign IDs
 │           ├── skill-loader.js      # (see embedded-skills.js below)
@@ -96,8 +96,9 @@ Edit `.dev.vars` and fill in your keys:
 
 | Variable | Where to get it |
 |----------|----------------|
-| `ZAI_API_KEY` | [Z.AI API keys](https://z.ai/manage-apikey) |
-| `ZAI_MODEL` | Optional model override. Defaults to `glm-4.7-flash` |
+| `AI_API_KEY` | API key for the configured model provider |
+| `AI_MODEL` | Model ID to use. Change this in env vars instead of code |
+| `AI_AGENT_CONCURRENCY` | Optional model-call concurrency. Defaults to `1` for free-tier friendliness |
 | `ANALYZE_IP_COOLDOWN_MS` | Optional per-IP cooldown in milliseconds. Set `0` to disable |
 | `ANALYZE_DAILY_CAP` | Optional global daily cap. Set `0` to disable |
 | `ETHERSCAN_API_KEY` | [Etherscan](https://etherscan.io/apis) — free tier is sufficient. One key works across all chains via V2 API |
@@ -163,7 +164,7 @@ Browser                    Cloudflare Pages Functions              External
                         └────┬─────┘  └────┬─────┘  └────┬─────┘  Promise.allSettled
                              │             │             │
                              ▼             ▼             ▼
-                          GLM API (JSON mode)
+                          Gemini API (JSON mode)
                               │
                               ▼
                      ┌──────────────────┐
@@ -182,7 +183,7 @@ Browser                    Cloudflare Pages Functions              External
 2. **Orchestrator** — validates input, fetches source, fans out 8 agents, merges results
 3. **Fetch source** — Etherscan V2 multichain API, handles single/multi-file, proxies, retries on rate limit
 4. **Prompt wrapper** — prepends anti-injection preamble to each agent's markdown prompt
-5. **Agent runner** — calls GLM with 25s budget, 1 retry for transient errors, validates output schema
+5. **Agent runner** — calls the configured model with 25s budget, 1 retry for transient errors, validates output schema
 6. **Merger** — classifies results, quality-gates findings (citation check, contradiction filter, finding cap), deduplicates by root cause (location + Jaccard check-name similarity), resolves severity conflicts, sorts CRITICAL > WARNING > INFO, assigns OS-001/002/... IDs
 
 ---
@@ -205,8 +206,9 @@ Recommended project settings in Cloudflare:
 
 Set the following environment variables in the Cloudflare Pages dashboard (`Workers & Pages -> <project> -> Settings -> Variables and Secrets`):
 
-- `ZAI_API_KEY`
-- `ZAI_MODEL` (optional)
+- `AI_API_KEY`
+- `AI_MODEL`
+- `AI_AGENT_CONCURRENCY` (optional)
 - `ANALYZE_IP_COOLDOWN_MS` (optional)
 - `ANALYZE_DAILY_CAP` (optional)
 - `ETHERSCAN_API_KEY`
@@ -238,7 +240,7 @@ Git-based deployment via Cloudflare Pages:
 - CORS is restricted to `opensentry.tech` and `localhost`
 - Error responses never leak API keys or stack traces
 - `embedded-skills.js` is gitignored (contains prompt IP generated from `skill/agents/`)
-- Configure provider-side limits in your Z.AI dashboard and use the optional middleware env vars for app-side abuse protection
+- Configure provider-side limits in your model provider dashboard and use the optional middleware env vars for app-side abuse protection
 
 
 ---

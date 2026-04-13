@@ -3,7 +3,7 @@
 // Run:  node --test tests/analyze.test.mjs
 //
 // These tests import onRequestPost directly and call it with a mock
-// Cloudflare Pages context object. Both fetchSource and GLM are stubbed
+// Cloudflare Pages context object. Both fetchSource and model calls are stubbed
 // via globalThis.fetch, so no network access is needed.
 
 import test from 'node:test';
@@ -16,7 +16,8 @@ import { onRequestPost } from '../functions/api/analyze.js';
 const ADDR = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
 
 const ENV = {
-  ZAI_API_KEY: 'test-zai-key',
+  AI_API_KEY: 'test-ai-key',
+  AI_MODEL: 'test-model',
   ETHERSCAN_API_KEY: 'test-etherscan-key',
 };
 
@@ -108,8 +109,8 @@ function etherscanImplementationOk() {
   };
 }
 
-// A valid GLM agent output — all agents return SAFE for simplicity.
-function glmSafe(agentName) {
+// A valid model output — all agents return SAFE for simplicity.
+function modelSafe(agentName) {
   return JSON.stringify({
     agent: agentName,
     severity: 'SAFE',
@@ -124,13 +125,13 @@ const AGENT_NAMES = [
   'MEV & Tx Safety', 'Code Quality', 'Transparency', 'Governance',
 ];
 
-// Build a combined stub that handles both Etherscan V2 and GLM calls.
+// Build a combined stub that handles both Etherscan V2 and model calls.
 function stubAll(options = {}) {
   const {
     etherscanResponse = etherscanOk(),
-    glmHandler = null, // if null, default to SAFE for all agents
+    modelHandler = null, // if null, default to SAFE for all agents
   } = options;
-  let glmCallIndex = 0;
+  let modelCallIndex = 0;
 
   return stubFetch(async (url) => {
     // Etherscan V2 calls go to api.etherscan.io/v2
@@ -141,17 +142,17 @@ function stubAll(options = {}) {
         json: async () => etherscanResponse,
       };
     }
-    // GLM calls
-    if (url.includes('api.z.ai')) {
-      if (glmHandler) return glmHandler(url, glmCallIndex++);
-      const name = AGENT_NAMES[glmCallIndex++ % AGENT_NAMES.length];
+    // Model calls
+    if (url.includes('generativelanguage.googleapis.com')) {
+      if (modelHandler) return modelHandler(url, modelCallIndex++);
+      const name = AGENT_NAMES[modelCallIndex++ % AGENT_NAMES.length];
       return {
         ok: true,
         status: 200,
         json: async () => ({
-          choices: [{
-            message: { content: glmSafe(name) },
-            finish_reason: 'stop',
+          candidates: [{
+            content: { parts: [{ text: modelSafe(name) }] },
+            finishReason: 'STOP',
           }],
         }),
       };
@@ -270,14 +271,14 @@ test('proxy metadata is surfaced in the API response', async () => {
         json: async () => explorerCallCount === 1 ? etherscanProxyOk() : etherscanImplementationOk(),
       };
     }
-    if (url.includes('api.z.ai')) {
+    if (url.includes('generativelanguage.googleapis.com')) {
       return {
         ok: true,
         status: 200,
         json: async () => ({
-          choices: [{
-            message: { content: glmSafe('Access Control') },
-            finish_reason: 'stop',
+          candidates: [{
+            content: { parts: [{ text: modelSafe('Access Control') }] },
+            finishReason: 'STOP',
           }],
         }),
       };
@@ -304,7 +305,7 @@ test('proxy metadata is surfaced in the API response', async () => {
 test('some agents fail → report still returns with partial results', async () => {
   let callIdx = 0;
   const restore = stubAll({
-    glmHandler: () => {
+    modelHandler: () => {
       const i = callIdx++;
       // First agent returns a WARNING finding; the rest fail with 500.
       if (i === 0) {
@@ -312,23 +313,25 @@ test('some agents fail → report still returns with partial results', async () 
           ok: true,
           status: 200,
           json: async () => ({
-            choices: [{
-              message: {
-                content: JSON.stringify({
-                  agent: 'Access Control',
-                  severity: 'WARNING',
-                  summary: 'One issue found.',
-                  findings: [{
-                    check: 'Missing initializer guard',
+            candidates: [{
+              content: {
+                parts: [{
+                  text: JSON.stringify({
+                    agent: 'Access Control',
                     severity: 'WARNING',
-                    location: 'USDC.sol:1',
-                    summary: 'No guard on init.',
-                    detail: 'The init function is missing a guard.',
-                    user_impact: 'Anyone can call init.',
-                  }],
-                }),
+                    summary: 'One issue found.',
+                    findings: [{
+                      check: 'Missing initializer guard',
+                      severity: 'WARNING',
+                      location: 'USDC.sol:1',
+                      summary: 'No guard on init.',
+                      detail: 'The init function is missing a guard.',
+                      user_impact: 'Anyone can call init.',
+                    }],
+                  }),
+                }],
               },
-              finish_reason: 'stop',
+              finishReason: 'STOP',
             }],
           }),
         };

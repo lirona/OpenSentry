@@ -3,7 +3,7 @@
 // Run:  node --test tests/agent-runner.test.mjs
 //
 // Every test stubs `globalThis.fetch` to exercise one branch of the runner
-// without hitting GLM. The runner's retry/timeout constants are read
+// without hitting the provider. The runner's retry/timeout constants are read
 // through the `__internal` export so the assertions stay in sync if tuning
 // values change later.
 
@@ -12,11 +12,11 @@ import assert from 'node:assert/strict';
 
 import { runAgent, __internal } from '../functions/api/lib/agent-runner.js';
 
-const { ERROR_CODES, RETRYABLE_CODES, ZAI_URL, buildUserMessage, validateAgentOutput, stripThinkTags } = __internal;
+const { ERROR_CODES, RETRYABLE_CODES, GEMINI_BASE_URL, buildUserMessage, validateAgentOutput } = __internal;
 
 // ---- helpers ---------------------------------------------------------------
 
-const ENV = { ZAI_API_KEY: 'test-key' };
+const ENV = { AI_API_KEY: 'test-key', AI_MODEL: 'test-model' };
 const KEY = 'access-control';
 const SYSTEM_PROMPT = 'PREAMBLE\n\nAGENT BODY';
 const SOURCE = '// SPDX-License-Identifier: MIT\npragma solidity 0.8.20;\ncontract C { function f() public {} }';
@@ -33,16 +33,16 @@ function stubFetch(handler) {
   return () => { globalThis.fetch = original; };
 }
 
-function glmOk(agentJson, extra = {}) {
+function modelOk(agentJson, extra = {}) {
   return {
     ok: true,
     status: 200,
     statusText: 'OK',
     json: async () => ({
-      choices: [
+      candidates: [
         {
-          message: { content: JSON.stringify(agentJson) },
-          finish_reason: 'stop',
+          content: { parts: [{ text: JSON.stringify(agentJson) }] },
+          finishReason: 'STOP',
         },
       ],
       ...extra,
@@ -51,12 +51,12 @@ function glmOk(agentJson, extra = {}) {
   };
 }
 
-function glmHttpError(status, message) {
+function modelHttpError(status, apiStatus, message) {
   return {
     ok: false,
     status,
     statusText: message || 'ERR',
-    json: async () => ({ error: { message: message || 'bad' } }),
+    json: async () => ({ error: { status: apiStatus, message: message || 'bad' } }),
     text: async () => 'bad',
   };
 }
@@ -103,10 +103,17 @@ test('throws on empty source', async () => {
   );
 });
 
-test('throws when env.ZAI_API_KEY is missing', async () => {
+test('throws when env.AI_API_KEY is missing', async () => {
   await assert.rejects(
-    () => runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, {}),
-    /ZAI_API_KEY is missing/,
+    () => runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, { AI_MODEL: 'test-model' }),
+    /AI_API_KEY is missing/,
+  );
+});
+
+test('throws when env.AI_MODEL is missing', async () => {
+  await assert.rejects(
+    () => runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, { AI_API_KEY: 'test-key' }),
+    /AI_MODEL is missing/,
   );
 });
 
@@ -141,14 +148,12 @@ test('happy path returns ok:true with parsed result on first attempt', async () 
   let callCount = 0;
   let sentBody = null;
   let sentUrl = null;
-  let sentAuth = null;
 
   const restore = stubFetch(async (url, init) => {
     callCount++;
     sentUrl = url;
-    sentAuth = init.headers.authorization;
     sentBody = JSON.parse(init.body);
-    return glmOk(validAgentOutput());
+    return modelOk(validAgentOutput());
   });
 
   try {
@@ -161,32 +166,11 @@ test('happy path returns ok:true with parsed result on first attempt', async () 
     assert.equal(out.result.findings.length, 1);
     assert.equal(callCount, 1);
 
-    assert.equal(sentUrl, ZAI_URL);
-    assert.equal(sentAuth, 'Bearer test-key');
-    assert.equal(sentBody.model, 'glm-4.7-flash');
-    assert.equal(sentBody.messages[0].role, 'system');
-    assert.equal(sentBody.messages[0].content, SYSTEM_PROMPT);
-    assert.match(sentBody.messages[1].content, /--- CONTRACT SOURCE CODE/);
-    assert.equal(sentBody.temperature, 0);
-    assert.deepEqual(sentBody.response_format, { type: 'json_object' });
-  } finally {
-    restore();
-  }
-});
-
-test('env.ZAI_MODEL overrides the default model', async () => {
-  let sentBody = null;
-  const restore = stubFetch(async (_url, init) => {
-    sentBody = JSON.parse(init.body);
-    return glmOk(validAgentOutput());
-  });
-  try {
-    const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, {
-      ZAI_API_KEY: 'test-key',
-      ZAI_MODEL: 'glm-5-turbo',
-    });
-    assert.equal(out.ok, true);
-    assert.equal(sentBody.model, 'glm-5-turbo');
+    assert.ok(sentUrl.startsWith(`${GEMINI_BASE_URL}/test-model:generateContent?key=`));
+    assert.equal(sentBody.system_instruction.parts[0].text, SYSTEM_PROMPT);
+    assert.match(sentBody.contents[0].parts[0].text, /--- CONTRACT SOURCE CODE/);
+    assert.equal(sentBody.generationConfig.temperature, 0);
+    assert.equal(sentBody.generationConfig.responseMimeType, 'application/json');
   } finally {
     restore();
   }
@@ -198,7 +182,7 @@ test('HTTP 429 maps to RATE_LIMIT and does NOT retry', async () => {
   let calls = 0;
   const restore = stubFetch(async () => {
     calls++;
-    return glmHttpError(429, 'quota exceeded');
+    return modelHttpError(429, 'RESOURCE_EXHAUSTED', 'quota exceeded');
   });
   try {
     const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, ENV);
@@ -212,11 +196,11 @@ test('HTTP 429 maps to RATE_LIMIT and does NOT retry', async () => {
   }
 });
 
-test('HTTP 400 oversized input maps to INPUT_TOO_LARGE and does NOT retry', async () => {
+test('HTTP 400 INVALID_ARGUMENT maps to INPUT_TOO_LARGE and does NOT retry', async () => {
   let calls = 0;
   const restore = stubFetch(async () => {
     calls++;
-    return glmHttpError(400, 'maximum context length exceeded');
+    return modelHttpError(400, 'INVALID_ARGUMENT', 'payload too large');
   });
   try {
     const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, ENV);
@@ -234,7 +218,7 @@ test('HTTP 403 maps to HTTP_ERROR and does NOT retry', async () => {
   let calls = 0;
   const restore = stubFetch(async () => {
     calls++;
-    return glmHttpError(403, 'bad key');
+    return modelHttpError(403, 'PERMISSION_DENIED', 'bad key');
   });
   try {
     const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, ENV);
@@ -247,42 +231,66 @@ test('HTTP 403 maps to HTTP_ERROR and does NOT retry', async () => {
   }
 });
 
-test('finish_reason=sensitive maps to SAFETY_BLOCKED', async () => {
+test('promptFeedback.blockReason maps to SAFETY_BLOCKED and does NOT retry', async () => {
+  let calls = 0;
+  const restore = stubFetch(async () => {
+    calls++;
+    return {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({ promptFeedback: { blockReason: 'SAFETY' } }),
+    };
+  });
+  try {
+    const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, ENV);
+    assert.equal(out.ok, false);
+    assert.equal(out.error.code, ERROR_CODES.SAFETY_BLOCKED);
+    assert.equal(out.error.blockReason, 'SAFETY');
+    assert.equal(calls, 1);
+  } finally {
+    restore();
+  }
+});
+
+test('candidate finishReason=SAFETY maps to SAFETY_BLOCKED', async () => {
   const restore = stubFetch(async () => ({
     ok: true,
     status: 200,
     statusText: 'OK',
     json: async () => ({
-      choices: [{ message: { content: '{}' }, finish_reason: 'sensitive' }],
+      candidates: [{ content: { parts: [{ text: '{}' }] }, finishReason: 'SAFETY' }],
     }),
   }));
   try {
     const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, ENV);
     assert.equal(out.ok, false);
     assert.equal(out.error.code, ERROR_CODES.SAFETY_BLOCKED);
-    assert.equal(out.error.finishReason, 'sensitive');
+    assert.equal(out.error.finishReason, 'SAFETY');
   } finally {
     restore();
   }
 });
 
-test('response without choices maps to PARSE_FAILED', async () => {
+test('candidate finishReason=RECITATION maps to SAFETY_BLOCKED', async () => {
   const restore = stubFetch(async () => ({
     ok: true,
     status: 200,
-    statusText: 'OK',
-    json: async () => ({}),
+    json: async () => ({
+      candidates: [{ content: { parts: [{ text: '{}' }] }, finishReason: 'RECITATION' }],
+    }),
   }));
   try {
     const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, ENV);
     assert.equal(out.ok, false);
-    assert.equal(out.error.code, ERROR_CODES.PARSE_FAILED);
+    assert.equal(out.error.code, ERROR_CODES.SAFETY_BLOCKED);
+    assert.equal(out.error.finishReason, 'RECITATION');
   } finally {
     restore();
   }
 });
 
-test('malformed JSON in message content maps to PARSE_FAILED and does NOT retry', async () => {
+test('malformed JSON in candidate text maps to PARSE_FAILED and does NOT retry', async () => {
   let calls = 0;
   const restore = stubFetch(async () => {
     calls++;
@@ -290,7 +298,7 @@ test('malformed JSON in message content maps to PARSE_FAILED and does NOT retry'
       ok: true,
       status: 200,
       json: async () => ({
-        choices: [{ message: { content: '{ this is not json' }, finish_reason: 'stop' }],
+        candidates: [{ content: { parts: [{ text: '{ this is not json' }] }, finishReason: 'STOP' }],
       }),
     };
   });
@@ -304,29 +312,10 @@ test('malformed JSON in message content maps to PARSE_FAILED and does NOT retry'
   }
 });
 
-test('think tags are stripped before JSON parsing', async () => {
-  const restore = stubFetch(async () => ({
-    ok: true,
-    status: 200,
-    json: async () => ({
-      choices: [{
-        message: { content: `<think>internal chain of thought</think>\n${JSON.stringify(validAgentOutput())}` },
-        finish_reason: 'stop',
-      }],
-    }),
-  }));
-  try {
-    const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, ENV);
-    assert.equal(out.ok, true);
-  } finally {
-    restore();
-  }
-});
-
 test('schema violation maps to VALIDATION_FAILED', async () => {
   const bad = validAgentOutput();
   delete bad.findings[0].user_impact;
-  const restore = stubFetch(async () => glmOk(bad));
+  const restore = stubFetch(async () => modelOk(bad));
   try {
     const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, ENV);
     assert.equal(out.ok, false);
@@ -339,7 +328,7 @@ test('schema violation maps to VALIDATION_FAILED', async () => {
 
 test('bad top-level severity maps to VALIDATION_FAILED', async () => {
   const bad = validAgentOutput({ severity: 'HIGH' });
-  const restore = stubFetch(async () => glmOk(bad));
+  const restore = stubFetch(async () => modelOk(bad));
   try {
     const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, ENV);
     assert.equal(out.ok, false);
@@ -356,8 +345,8 @@ test('HTTP 5xx once then success succeeds on attempt 2', async () => {
   let calls = 0;
   const restore = stubFetch(async () => {
     calls++;
-    if (calls === 1) return glmHttpError(503, 'temporary');
-    return glmOk(validAgentOutput());
+    if (calls === 1) return modelHttpError(503, 'UNAVAILABLE', 'temporary');
+    return modelOk(validAgentOutput());
   });
   try {
     const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, ENV);
@@ -373,7 +362,7 @@ test('HTTP 5xx twice fails with attempts=2', async () => {
   let calls = 0;
   const restore = stubFetch(async () => {
     calls++;
-    return glmHttpError(502, 'gateway down');
+    return modelHttpError(502, 'UNAVAILABLE', 'gateway down');
   });
   try {
     const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, ENV);
@@ -391,7 +380,7 @@ test('network error (fetch throws non-abort) is retryable', async () => {
   const restore = stubFetch(async () => {
     calls++;
     if (calls === 1) throw new Error('ECONNRESET');
-    return glmOk(validAgentOutput());
+    return modelOk(validAgentOutput());
   });
   try {
     const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, ENV);
@@ -462,8 +451,4 @@ test('validateAgentOutput rejects bad finding severity', () => {
     }],
   });
   assert.match(msg, /findings\[0\]\.severity is invalid/);
-});
-
-test('stripThinkTags removes a leading think block', () => {
-  assert.equal(stripThinkTags('<think>secret</think>\n{"ok":true}'), '{"ok":true}');
 });

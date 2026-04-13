@@ -2,13 +2,12 @@
 # runs. In production, set the same keys in the Cloudflare Pages dashboard
 # under Settings -> Environment variables (marked as Encrypted / Secret).
 
-# --- Z.AI / GLM ---
-# Create an API key at https://z.ai/manage-apikey
-ZAI_API_KEY=""
-# Optional override. Defaults to glm-4.7-flash in code.
-ZAI_MODEL="glm-4.7-flash"
-
+# --- AI provider ---
+AI_API_KEY=""
+AI_MODEL=""
 # --- API abuse protection ---
+# Optional model-call concurrency. Defaults to 1 to avoid free-tier burst limits.
+AI_AGENT_CONCURRENCY="1"
 # Optional per-IP cooldown in milliseconds. Set to 0 to disable.
 ANALYZE_IP_COOLDOWN_MS="15000"
 # Optional global daily cap. Set to 0 to disable.

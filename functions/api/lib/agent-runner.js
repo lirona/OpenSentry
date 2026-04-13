@@ -1,6 +1,6 @@
 // Agent runner for OpenSentry.
 //
-// Calls the Z.AI GLM chat-completions endpoint with a pre-built
+// Calls the Google Gemini `generateContent` endpoint with a pre-built
 // system prompt (from prompt-wrapper.js) plus the contract metadata and
 // source, enforces a total 25s budget, retries at most once for transient
 // errors, validates the model's JSON output against the skill's output
@@ -13,16 +13,17 @@
 //     { ok: true,  key, result: { agent, severity, findings, summary }, attempts }
 //
 //   failure:
-//     { ok: false, key, error: { code, message, httpStatus?, finishReason? }, attempts }
+//     { ok: false, key, error: { code, message, httpStatus?, finishReason?,
+//                                blockReason? }, attempts }
 //
-// Programming-bug cases (missing key, missing env.ZAI_API_KEY, missing
-// required metadata, empty source) throw synchronously so they surface loudly
-// during development instead of masquerading as agent failures.
+// Programming-bug cases (missing key, missing env.AI_API_KEY, missing
+// env.AI_MODEL, missing required metadata, empty source) throw synchronously
+// so they surface loudly during development instead of masquerading as agent
+// failures.
 
-// ---- Z.AI endpoint + request tuning -----------------------------------------
+// ---- Gemini endpoint + request tuning --------------------------------------
 
-const ZAI_MODEL = 'glm-4.7-flash';
-const ZAI_URL = 'https://api.z.ai/api/paas/v4/chat/completions';
+const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 // Total wall-clock budget per agent, shared across attempts. The 30s Pages
 // Functions limit minus a 5s orchestrator margin.
@@ -40,9 +41,8 @@ const RETRY_BACKOFF_MS = 500;
 // gives us structured output without having to strip markdown fences.
 const REQUEST_CONFIG = Object.freeze({
   temperature: 0,
-  max_tokens: 4096,
-  response_format: { type: 'json_object' },
-  stream: false,
+  maxOutputTokens: 4096,
+  responseMimeType: 'application/json',
 });
 
 // ---- Skill output-format constants ------------------------------------------
@@ -97,7 +97,7 @@ const RETRYABLE_CODES = new Set([
  *                                "(unknown)" so a sparse response from the
  *                                source fetcher doesn't crash the runner.
  * @param {object} env            Cloudflare Pages Functions env. Must include
- *                                ZAI_API_KEY. ZAI_MODEL is optional.
+ *                                AI_API_KEY and AI_MODEL.
  * @returns {Promise<object>}     Uniform result object (see file header).
  */
 export async function runAgent(key, systemPrompt, source, metadata, env) {
@@ -111,18 +111,18 @@ export async function runAgent(key, systemPrompt, source, metadata, env) {
   if (typeof source !== 'string' || source.length === 0) {
     throw new TypeError('runAgent: source must be a non-empty string');
   }
-  if (!env || typeof env.ZAI_API_KEY !== 'string' || env.ZAI_API_KEY.length === 0) {
-    throw new Error('runAgent: env.ZAI_API_KEY is missing');
+  if (!env || typeof env.AI_API_KEY !== 'string' || env.AI_API_KEY.length === 0) {
+    throw new Error('runAgent: env.AI_API_KEY is missing');
+  }
+  if (!env || typeof env.AI_MODEL !== 'string' || env.AI_MODEL.length === 0) {
+    throw new Error('runAgent: env.AI_MODEL is missing');
   }
 
   const userMessage = buildUserMessage(metadata, source);
   const requestBody = {
-    model: env.ZAI_MODEL || ZAI_MODEL,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userMessage },
-    ],
-    ...REQUEST_CONFIG,
+    system_instruction: { parts: [{ text: systemPrompt }] },
+    contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+    generationConfig: REQUEST_CONFIG,
   };
 
   const deadline = Date.now() + TOTAL_BUDGET_MS;
@@ -140,7 +140,7 @@ export async function runAgent(key, systemPrompt, source, metadata, env) {
     }
     const attemptTimeout = Math.min(remaining, PER_ATTEMPT_CAP_MS);
 
-    const outcome = await callZai(env.ZAI_API_KEY, requestBody, attemptTimeout);
+    const outcome = await callGemini(env.AI_API_KEY, env.AI_MODEL, requestBody, attemptTimeout);
     if (outcome.ok) {
       return { ok: true, key, result: outcome.data, attempts: attempt };
     }
@@ -193,23 +193,19 @@ function buildUserMessage(metadata, source) {
 }
 
 /**
- * Single GLM call with an AbortController-backed timeout. Returns either
+ * Single Gemini call with an AbortController-backed timeout. Returns either
  * `{ ok: true, data }` on a fully-parsed-and-validated agent output or
  * `{ ok: false, error: { code, message, ... } }` on any failure. Never throws.
  */
-async function callZai(apiKey, body, timeoutMs) {
+async function callGemini(apiKey, model, body, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   let res;
   try {
-    res = await fetch(ZAI_URL, {
+    res = await fetch(`${GEMINI_BASE_URL}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
       method: 'POST',
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        'content-type': 'application/json',
-        'accept-language': 'en-US,en',
-      },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
       signal: controller.signal,
     });
@@ -218,68 +214,76 @@ async function callZai(apiKey, body, timeoutMs) {
     // AbortError is what AbortController throws when .abort() fires. In
     // Workers the DOMException has name === 'AbortError'.
     if (e && (e.name === 'AbortError' || e.name === 'TimeoutError')) {
-      return errorResult(ERROR_CODES.TIMEOUT, `GLM call exceeded ${timeoutMs}ms`);
+      return errorResult(ERROR_CODES.TIMEOUT, `Model call exceeded ${timeoutMs}ms`);
     }
-    return errorResult(ERROR_CODES.NETWORK_ERROR, `Network error calling GLM: ${e?.message || String(e)}`);
+    return errorResult(ERROR_CODES.NETWORK_ERROR, `Network error calling model API: ${e?.message || String(e)}`);
   }
   clearTimeout(timer);
 
-  // ---- Non-2xx: classify by HTTP status -----------------------------------
+  // ---- Non-2xx: classify by status + API error.status ---------------------
   if (!res.ok) {
     const errBody = await safeReadJson(res);
-    const apiMsg = errBody?.error?.message || errBody?.message || res.statusText || `HTTP ${res.status}`;
+    const apiMsg = errBody?.error?.message || res.statusText || `HTTP ${res.status}`;
+    const apiStatus = errBody?.error?.status || '';
 
     if (res.status === 429) {
-      return errorResult(ERROR_CODES.RATE_LIMIT, `GLM rate limit: ${apiMsg}`, { httpStatus: 429 });
+      return errorResult(ERROR_CODES.RATE_LIMIT, `Model rate limit: ${apiMsg}`, { httpStatus: 429 });
     }
-    if (res.status === 400 && looksLikeInputTooLarge(apiMsg)) {
+    if (res.status === 400 && apiStatus === 'INVALID_ARGUMENT') {
       return errorResult(
         ERROR_CODES.INPUT_TOO_LARGE,
-        `GLM rejected input (likely too large or malformed): ${apiMsg}`,
+        `Model rejected input (likely too large or malformed): ${apiMsg}`,
         { httpStatus: 400 },
       );
     }
     if (res.status >= 500 && res.status < 600) {
-      return errorResult(ERROR_CODES.HTTP_5XX, `GLM ${res.status}: ${apiMsg}`, { httpStatus: res.status });
+      return errorResult(ERROR_CODES.HTTP_5XX, `Model ${res.status}: ${apiMsg}`, { httpStatus: res.status });
     }
-    return errorResult(ERROR_CODES.HTTP_ERROR, `GLM ${res.status}: ${apiMsg}`, { httpStatus: res.status });
+    return errorResult(ERROR_CODES.HTTP_ERROR, `Model ${res.status}: ${apiMsg}`, { httpStatus: res.status });
   }
 
-  // ---- 2xx envelope parse + candidate-level safety check ------------------
+  // ---- 2xx envelope parse + prompt-level safety check ---------------------
   let payload;
   try {
     payload = await res.json();
   } catch (e) {
-    return errorResult(ERROR_CODES.PARSE_FAILED, `GLM envelope was not JSON: ${e?.message || String(e)}`);
+    return errorResult(ERROR_CODES.PARSE_FAILED, `Model envelope was not JSON: ${e?.message || String(e)}`);
   }
 
-  const choice = payload?.choices?.[0];
-  if (!choice) {
-    return errorResult(ERROR_CODES.PARSE_FAILED, 'GLM response had no choices');
-  }
-
-  // Candidate-level safety: treat this as a failed run so the merger flags
-  // the agent as "Analysis incomplete" rather than reading an empty payload
-  // as evidence that the contract is safe.
-  const finishReason = choice.finish_reason;
-  if (finishReason === 'sensitive') {
+  if (payload?.promptFeedback?.blockReason) {
     return errorResult(
       ERROR_CODES.SAFETY_BLOCKED,
-      `GLM candidate blocked with finish_reason=${finishReason}`,
+      `Model safety filter blocked the prompt: ${payload.promptFeedback.blockReason}`,
+      { blockReason: payload.promptFeedback.blockReason },
+    );
+  }
+
+  const candidate = payload?.candidates?.[0];
+  if (!candidate) {
+    return errorResult(ERROR_CODES.PARSE_FAILED, 'Model response had no candidates');
+  }
+
+  // Candidate-level safety / recitation: treat both as a failed run so the
+  // merger flags the agent as "Analysis incomplete" rather than using empty
+  // findings as a signal.
+  const finishReason = candidate.finishReason;
+  if (finishReason === 'SAFETY' || finishReason === 'RECITATION') {
+    return errorResult(
+      ERROR_CODES.SAFETY_BLOCKED,
+      `Model candidate blocked with finishReason=${finishReason}`,
       { finishReason },
     );
   }
 
-  const text = choice?.message?.content;
+  const text = candidate?.content?.parts?.[0]?.text;
   if (typeof text !== 'string' || text.length === 0) {
-    return errorResult(ERROR_CODES.PARSE_FAILED, 'GLM choice had no text content');
+    return errorResult(ERROR_CODES.PARSE_FAILED, 'Model candidate had no text part');
   }
 
-  // Some GLM variants may prepend hidden reasoning tags; strip them before
-  // JSON parsing so downstream validation sees only the declared payload.
+  // JSON mode should guarantee this parses, but trust nothing.
   let parsed;
   try {
-    parsed = JSON.parse(stripThinkTags(text));
+    parsed = JSON.parse(text);
   } catch (e) {
     return errorResult(
       ERROR_CODES.PARSE_FAILED,
@@ -293,17 +297,6 @@ async function callZai(apiKey, body, timeoutMs) {
   }
 
   return { ok: true, data: parsed };
-}
-
-// Remove optional reasoning blocks that are not part of the JSON payload.
-function stripThinkTags(text) {
-  return text.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
-}
-
-// Provider error messages vary, so this stays heuristic and intentionally
-// broad enough to catch the common "input too large" phrasings.
-function looksLikeInputTooLarge(message) {
-  return /too large|too long|context length|max(?:imum)? (?:input|context|token)|exceed(?:ed|s)?/i.test(message);
 }
 
 /**
@@ -373,13 +366,11 @@ function sleep(ms) {
 export const __internal = Object.freeze({
   buildUserMessage,
   validateAgentOutput,
-  stripThinkTags,
-  looksLikeInputTooLarge,
   ERROR_CODES,
   RETRYABLE_CODES,
   TOTAL_BUDGET_MS,
   PER_ATTEMPT_CAP_MS,
   RETRY_BACKOFF_MS,
-  ZAI_URL,
+  GEMINI_BASE_URL,
   REQUEST_CONFIG,
 });

@@ -17,20 +17,22 @@ pages_build_output_dir = "./website"
 # Local development: create a `.dev.vars` file (gitignored) at the project
 # root with the same keys, e.g.:
 #
-#   ZAI_API_KEY="..."
-#   ZAI_MODEL="glm-4.7-flash"
+#   AI_API_KEY="..."
+#   AI_MODEL="..."
+#   AI_AGENT_CONCURRENCY="1"
 #   ANALYZE_IP_COOLDOWN_MS="15000"
 #   ANALYZE_DAILY_CAP="0"
 #   ETHERSCAN_API_KEY="..."
 #
-# Access inside Pages Functions via `context.env.ZAI_API_KEY`, etc.
+# Access inside Pages Functions via `context.env.AI_API_KEY`, etc.
 #
 # Required secret bindings:
-#   - ZAI_API_KEY
+#   - AI_API_KEY
 #   - ETHERSCAN_API_KEY
 #
 # Optional plain-text / secret bindings:
-#   - ZAI_MODEL
+#   - AI_MODEL
+#   - AI_AGENT_CONCURRENCY
 #   - ANALYZE_IP_COOLDOWN_MS
 #   - ANALYZE_DAILY_CAP
 #
