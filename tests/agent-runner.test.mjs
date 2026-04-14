@@ -17,6 +17,7 @@ const { ERROR_CODES, RETRYABLE_CODES, GEMINI_BASE_URL, buildUserMessage, validat
 // ---- helpers ---------------------------------------------------------------
 
 const ENV = { AI_API_KEY: 'test-key', AI_MODEL: 'test-model' };
+const CLAUDE_ENV = { AI_PROVIDER: 'claude', AI_API_KEY: 'test-key', AI_MODEL: 'claude-sonnet-test' };
 const KEY = 'access-control';
 const SYSTEM_PROMPT = 'PREAMBLE\n\nAGENT BODY';
 const SOURCE = '// SPDX-License-Identifier: MIT\npragma solidity 0.8.20;\ncontract C { function f() public {} }';
@@ -171,6 +172,46 @@ test('happy path returns ok:true with parsed result on first attempt', async () 
     assert.match(sentBody.contents[0].parts[0].text, /--- CONTRACT SOURCE CODE/);
     assert.equal(sentBody.generationConfig.temperature, 0);
     assert.equal(sentBody.generationConfig.responseMimeType, 'application/json');
+  } finally {
+    restore();
+  }
+});
+
+test('claude provider happy path returns ok:true with parsed result on first attempt', async () => {
+  let sentBody = null;
+  let sentHeaders = null;
+  let sentUrl = null;
+
+  const restore = stubFetch(async (url, init) => {
+    sentUrl = url;
+    sentHeaders = init.headers;
+    sentBody = JSON.parse(init.body);
+    return {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({
+        content: [{ type: 'text', text: JSON.stringify(validAgentOutput()) }],
+        stop_reason: 'end_turn',
+      }),
+    };
+  });
+
+  try {
+    const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, CLAUDE_ENV);
+    assert.equal(out.ok, true);
+    assert.equal(out.key, KEY);
+    assert.equal(out.attempts, 1);
+    assert.equal(out.result.agent, 'Access Control');
+
+    assert.equal(sentUrl, __internal.CLAUDE_API_URL);
+    assert.equal(sentHeaders['x-api-key'], 'test-key');
+    assert.equal(sentHeaders['anthropic-version'], __internal.CLAUDE_API_VERSION);
+    assert.equal(sentBody.model, 'claude-sonnet-test');
+    assert.equal(sentBody.system, SYSTEM_PROMPT);
+    assert.equal(sentBody.temperature, __internal.REQUEST_CONFIG.temperature);
+    assert.equal(sentBody.max_tokens, __internal.REQUEST_CONFIG.maxOutputTokens);
+    assert.match(sentBody.messages[0].content, /--- CONTRACT SOURCE CODE/);
   } finally {
     restore();
   }

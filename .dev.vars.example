@@ -3,6 +3,8 @@
 # under Settings -> Environment variables (marked as Encrypted / Secret).
 
 # --- AI provider ---
+# Supported values: "gemini" (default) or "claude".
+AI_PROVIDER="gemini"
 AI_API_KEY=""
 AI_MODEL=""
 # --- API abuse protection ---

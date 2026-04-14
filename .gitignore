@@ -17,3 +17,6 @@ functions/api/lib/embedded-skills.js
 # OS
 .DS_Store
 Thumbs.db
+
+# Files for testing
+tests/contracts

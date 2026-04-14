@@ -1,11 +1,11 @@
 // Agent runner for OpenSentry.
 //
-// Calls the Google Gemini `generateContent` endpoint with a pre-built
-// system prompt (from prompt-wrapper.js) plus the contract metadata and
-// source, enforces a total 25s budget, retries at most once for transient
-// errors, validates the model's JSON output against the skill's output
-// format, and returns a uniform result object that the merger (Step 7) can
-// classify without ever throwing at runtime.
+// Calls the configured model provider with a pre-built system prompt (from
+// prompt-wrapper.js) plus the contract metadata and source, enforces a total
+// 25s budget, retries at most once for transient errors, validates the
+// model's JSON output against the skill's output format, and returns a
+// uniform result object that the merger (Step 7) can classify without ever
+// throwing at runtime.
 //
 // Return shape (always fulfilled — never throws on runtime failures):
 //
@@ -21,9 +21,8 @@
 // so they surface loudly during development instead of masquerading as agent
 // failures.
 
-// ---- Gemini endpoint + request tuning --------------------------------------
-
-const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+import { createGeminiProvider, GEMINI_BASE_URL } from './model-providers/gemini.js';
+import { createClaudeProvider, CLAUDE_API_URL, CLAUDE_API_VERSION } from './model-providers/claude.js';
 
 // Total wall-clock budget per agent, shared across attempts. The 30s Pages
 // Functions limit minus a 5s orchestrator margin.
@@ -36,9 +35,8 @@ const PER_ATTEMPT_CAP_MS = 15_000;
 // aspirational with only two attempts — this is the single backoff step.
 const RETRY_BACKOFF_MS = 500;
 
-// Shared request config for every agent call. temperature: 0 keeps the model
-// deterministic so retries don't mask real validation failures; JSON mode
-// gives us structured output without having to strip markdown fences.
+// Shared request config for every agent call. Providers translate this into
+// their wire format, but the policy itself stays centralized here.
 const REQUEST_CONFIG = Object.freeze({
   temperature: 0,
   maxOutputTokens: 4096,
@@ -111,20 +109,10 @@ export async function runAgent(key, systemPrompt, source, metadata, env) {
   if (typeof source !== 'string' || source.length === 0) {
     throw new TypeError('runAgent: source must be a non-empty string');
   }
-  if (!env || typeof env.AI_API_KEY !== 'string' || env.AI_API_KEY.length === 0) {
-    throw new Error('runAgent: env.AI_API_KEY is missing');
-  }
-  if (!env || typeof env.AI_MODEL !== 'string' || env.AI_MODEL.length === 0) {
-    throw new Error('runAgent: env.AI_MODEL is missing');
-  }
+  const provider = getModelProvider(env);
+  assertModelEnv(env);
 
   const userMessage = buildUserMessage(metadata, source);
-  const requestBody = {
-    system_instruction: { parts: [{ text: systemPrompt }] },
-    contents: [{ role: 'user', parts: [{ text: userMessage }] }],
-    generationConfig: REQUEST_CONFIG,
-  };
-
   const deadline = Date.now() + TOTAL_BUDGET_MS;
   let lastError = null;
 
@@ -140,9 +128,34 @@ export async function runAgent(key, systemPrompt, source, metadata, env) {
     }
     const attemptTimeout = Math.min(remaining, PER_ATTEMPT_CAP_MS);
 
-    const outcome = await callGemini(env.AI_API_KEY, env.AI_MODEL, requestBody, attemptTimeout);
+    const outcome = await callProvider(provider, {
+      systemPrompt,
+      userMessage,
+      requestConfig: REQUEST_CONFIG,
+      timeoutMs: attemptTimeout,
+      env,
+    });
     if (outcome.ok) {
-      return { ok: true, key, result: outcome.data, attempts: attempt };
+      let parsed;
+      try {
+        parsed = JSON.parse(outcome.text);
+      } catch (e) {
+        return failure(
+          key,
+          errorResult(
+            ERROR_CODES.PARSE_FAILED,
+            `Failed to parse agent JSON output: ${e?.message || String(e)}`,
+          ).error,
+          attempt,
+        );
+      }
+
+      const validationMsg = validateAgentOutput(parsed);
+      if (validationMsg) {
+        return failure(key, errorResult(ERROR_CODES.VALIDATION_FAILED, validationMsg).error, attempt);
+      }
+
+      return { ok: true, key, result: parsed, attempts: attempt };
     }
 
     lastError = outcome.error;
@@ -193,26 +206,36 @@ function buildUserMessage(metadata, source) {
 }
 
 /**
- * Single Gemini call with an AbortController-backed timeout. Returns either
- * `{ ok: true, data }` on a fully-parsed-and-validated agent output or
- * `{ ok: false, error: { code, message, ... } }` on any failure. Never throws.
+ * Resolve the configured model provider. Step 1 keeps Gemini as the only
+ * implementation, but the runner now depends on this narrow interface rather
+ * than Gemini's wire format directly.
  */
-async function callGemini(apiKey, model, body, timeoutMs) {
+function getModelProvider(env) {
+  const providerName = env?.AI_PROVIDER || 'gemini';
+  if (providerName === 'gemini') return createGeminiProvider();
+  if (providerName === 'claude') return createClaudeProvider();
+  throw new Error(`runAgent: unsupported AI_PROVIDER "${providerName}"`);
+}
+
+function assertModelEnv(env) {
+  if (!env || typeof env.AI_API_KEY !== 'string' || env.AI_API_KEY.length === 0) {
+    throw new Error('runAgent: env.AI_API_KEY is missing');
+  }
+  if (!env || typeof env.AI_MODEL !== 'string' || env.AI_MODEL.length === 0) {
+    throw new Error('runAgent: env.AI_MODEL is missing');
+  }
+}
+
+async function callProvider(provider, { systemPrompt, userMessage, requestConfig, timeoutMs, env }) {
+  const { url, init } = provider.buildRequest({ systemPrompt, userMessage, requestConfig, env });
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   let res;
   try {
-    res = await fetch(`${GEMINI_BASE_URL}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
+    res = await fetch(url, { ...init, signal: controller.signal });
   } catch (e) {
     clearTimeout(timer);
-    // AbortError is what AbortController throws when .abort() fires. In
-    // Workers the DOMException has name === 'AbortError'.
     if (e && (e.name === 'AbortError' || e.name === 'TimeoutError')) {
       return errorResult(ERROR_CODES.TIMEOUT, `Model call exceeded ${timeoutMs}ms`);
     }
@@ -220,29 +243,11 @@ async function callGemini(apiKey, model, body, timeoutMs) {
   }
   clearTimeout(timer);
 
-  // ---- Non-2xx: classify by status + API error.status ---------------------
   if (!res.ok) {
     const errBody = await safeReadJson(res);
-    const apiMsg = errBody?.error?.message || res.statusText || `HTTP ${res.status}`;
-    const apiStatus = errBody?.error?.status || '';
-
-    if (res.status === 429) {
-      return errorResult(ERROR_CODES.RATE_LIMIT, `Model rate limit: ${apiMsg}`, { httpStatus: 429 });
-    }
-    if (res.status === 400 && apiStatus === 'INVALID_ARGUMENT') {
-      return errorResult(
-        ERROR_CODES.INPUT_TOO_LARGE,
-        `Model rejected input (likely too large or malformed): ${apiMsg}`,
-        { httpStatus: 400 },
-      );
-    }
-    if (res.status >= 500 && res.status < 600) {
-      return errorResult(ERROR_CODES.HTTP_5XX, `Model ${res.status}: ${apiMsg}`, { httpStatus: res.status });
-    }
-    return errorResult(ERROR_CODES.HTTP_ERROR, `Model ${res.status}: ${apiMsg}`, { httpStatus: res.status });
+    return provider.classifyHttpError(res, errBody);
   }
 
-  // ---- 2xx envelope parse + prompt-level safety check ---------------------
   let payload;
   try {
     payload = await res.json();
@@ -250,53 +255,7 @@ async function callGemini(apiKey, model, body, timeoutMs) {
     return errorResult(ERROR_CODES.PARSE_FAILED, `Model envelope was not JSON: ${e?.message || String(e)}`);
   }
 
-  if (payload?.promptFeedback?.blockReason) {
-    return errorResult(
-      ERROR_CODES.SAFETY_BLOCKED,
-      `Model safety filter blocked the prompt: ${payload.promptFeedback.blockReason}`,
-      { blockReason: payload.promptFeedback.blockReason },
-    );
-  }
-
-  const candidate = payload?.candidates?.[0];
-  if (!candidate) {
-    return errorResult(ERROR_CODES.PARSE_FAILED, 'Model response had no candidates');
-  }
-
-  // Candidate-level safety / recitation: treat both as a failed run so the
-  // merger flags the agent as "Analysis incomplete" rather than using empty
-  // findings as a signal.
-  const finishReason = candidate.finishReason;
-  if (finishReason === 'SAFETY' || finishReason === 'RECITATION') {
-    return errorResult(
-      ERROR_CODES.SAFETY_BLOCKED,
-      `Model candidate blocked with finishReason=${finishReason}`,
-      { finishReason },
-    );
-  }
-
-  const text = candidate?.content?.parts?.[0]?.text;
-  if (typeof text !== 'string' || text.length === 0) {
-    return errorResult(ERROR_CODES.PARSE_FAILED, 'Model candidate had no text part');
-  }
-
-  // JSON mode should guarantee this parses, but trust nothing.
-  let parsed;
-  try {
-    parsed = JSON.parse(text);
-  } catch (e) {
-    return errorResult(
-      ERROR_CODES.PARSE_FAILED,
-      `Failed to parse agent JSON output: ${e?.message || String(e)}`,
-    );
-  }
-
-  const validationMsg = validateAgentOutput(parsed);
-  if (validationMsg) {
-    return errorResult(ERROR_CODES.VALIDATION_FAILED, validationMsg);
-  }
-
-  return { ok: true, data: parsed };
+  return provider.extractText(payload);
 }
 
 /**
@@ -371,6 +330,11 @@ export const __internal = Object.freeze({
   TOTAL_BUDGET_MS,
   PER_ATTEMPT_CAP_MS,
   RETRY_BACKOFF_MS,
+  getModelProvider,
+  assertModelEnv,
+  callProvider,
   GEMINI_BASE_URL,
   REQUEST_CONFIG,
+  CLAUDE_API_URL,
+  CLAUDE_API_VERSION,
 });

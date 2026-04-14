@@ -96,6 +96,7 @@ Edit `.dev.vars` and fill in your keys:
 
 | Variable | Where to get it |
 |----------|----------------|
+| `AI_PROVIDER` | Model provider. Supported: `gemini` or `claude`. Defaults to `gemini` if omitted |
 | `AI_API_KEY` | API key for the configured model provider |
 | `AI_MODEL` | Model ID to use. Change this in env vars instead of code |
 | `AI_AGENT_CONCURRENCY` | Optional model-call concurrency. Defaults to `1` for free-tier friendliness |
