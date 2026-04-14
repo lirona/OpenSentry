@@ -11,6 +11,8 @@
 //
 // Exported: fetchSource(address, chain, env, options?)
 
+import { buildSourceBundle } from './source-bundle.js';
+
 const V2_BASE_URL = "https://api.etherscan.io/v2/api";
 
 // Whitelisted chains -> Etherscan V2 chainid.
@@ -300,10 +302,7 @@ function parseSourceCode(rawSourceCode, contractName) {
 
   // Single-file fallback.
   const fileName = `${contractName || "Contract"}.sol`;
-  return {
-    files: [{ name: fileName, content: rawSourceCode }],
-    combinedSource: rawSourceCode,
-  };
+  return buildSourceBundle([{ name: fileName, content: rawSourceCode }]);
 }
 
 function tryParseJson(text) {
@@ -356,10 +355,7 @@ function extractFiles(parsed) {
 }
 
 function buildMultiFileResult(files) {
-  const combinedSource = files
-    .map((f) => `// === File: ${f.name} ===\n${f.content}\n`)
-    .join("\n");
-  return { files, combinedSource };
+  return buildSourceBundle(files);
 }
 
 function parseAbi(abiString) {
