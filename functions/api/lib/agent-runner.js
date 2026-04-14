@@ -109,8 +109,7 @@ export async function runAgent(key, systemPrompt, source, metadata, env) {
   if (typeof source !== 'string' || source.length === 0) {
     throw new TypeError('runAgent: source must be a non-empty string');
   }
-  const provider = getModelProvider(env);
-  assertModelEnv(env);
+  const provider = resolveModelProvider(env);
 
   const userMessage = buildUserMessage(metadata, source);
   const deadline = Date.now() + TOTAL_BUDGET_MS;
@@ -215,6 +214,11 @@ function getModelProvider(env) {
   if (providerName === 'gemini') return createGeminiProvider();
   if (providerName === 'claude') return createClaudeProvider();
   throw new Error(`runAgent: unsupported AI_PROVIDER "${providerName}"`);
+}
+
+export function resolveModelProvider(env) {
+  assertModelEnv(env);
+  return getModelProvider(env);
 }
 
 function assertModelEnv(env) {
@@ -331,6 +335,7 @@ export const __internal = Object.freeze({
   PER_ATTEMPT_CAP_MS,
   RETRY_BACKOFF_MS,
   getModelProvider,
+  resolveModelProvider,
   assertModelEnv,
   callProvider,
   GEMINI_BASE_URL,

@@ -28,7 +28,7 @@ function stubFetch(handler) {
   };
 }
 
-test('CLI analyze --json prints final result for a local Solidity file', async () => {
+test('CLI analyze --json prints final result for a local Solidity file', { concurrency: false }, async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'opensentry-cli-'));
   const filePath = path.join(tmpDir, 'Vault.sol');
   await writeFile(filePath, 'pragma solidity 0.8.20;\ncontract Vault {}', 'utf8');
@@ -79,7 +79,7 @@ test('CLI analyze --json prints final result for a local Solidity file', async (
   }
 });
 
-test('CLI can save final JSON and trace artifacts', async () => {
+test('CLI can save final JSON and trace artifacts', { concurrency: false }, async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'opensentry-cli-'));
   const contractsDir = path.join(tmpDir, 'contracts');
   const outPath = path.join(tmpDir, 'report.json');
@@ -136,4 +136,116 @@ test('CLI can save final JSON and trace artifacts', async () => {
   } finally {
     restore();
   }
+});
+
+test('CLI rejects missing analyze target flags', { concurrency: false }, async () => {
+  const stdout = makeBuffer();
+  const stderr = makeBuffer();
+
+  const exitCode = await runCli(['analyze'], {
+    stdout: stdout.stream,
+    stderr: stderr.stream,
+    env: {},
+  });
+
+  assert.equal(exitCode, 1);
+  assert.equal(stdout.read(), '');
+  assert.match(stderr.read(), /Specify exactly one of --path or --file/);
+});
+
+test('CLI rejects using both --path and --file together', { concurrency: false }, async () => {
+  const stdout = makeBuffer();
+  const stderr = makeBuffer();
+
+  const exitCode = await runCli(['analyze', '--path', '/tmp/x', '--file', '/tmp/y'], {
+    stdout: stdout.stream,
+    stderr: stderr.stream,
+    env: {},
+  });
+
+  assert.equal(exitCode, 1);
+  assert.match(stderr.read(), /Specify exactly one of --path or --file/);
+});
+
+test('CLI reports unknown options', { concurrency: false }, async () => {
+  const stdout = makeBuffer();
+  const stderr = makeBuffer();
+
+  const exitCode = await runCli(['analyze', '--wat'], {
+    stdout: stdout.stream,
+    stderr: stderr.stream,
+    env: {},
+  });
+
+  assert.equal(exitCode, 1);
+  assert.match(stderr.read(), /Unknown option "--wat"/);
+});
+
+test('CLI reports local source loading failures', { concurrency: false }, async () => {
+  const stdout = makeBuffer();
+  const stderr = makeBuffer();
+
+  const exitCode = await runCli(['analyze', '--file', '/definitely/missing.sol'], {
+    stdout: stdout.stream,
+    stderr: stderr.stream,
+    env: {},
+  });
+
+  assert.equal(exitCode, 1);
+  assert.equal(stdout.read(), '');
+  assert.match(stderr.read(), /Local source path not found/);
+});
+
+test('CLI reports model configuration failures', { concurrency: false }, async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'opensentry-cli-'));
+  const filePath = path.join(tmpDir, 'Vault.sol');
+  await writeFile(filePath, 'pragma solidity 0.8.20;\ncontract Vault {}', 'utf8');
+
+  const stdout = makeBuffer();
+  const stderr = makeBuffer();
+  const exitCode = await runCli(['analyze', '--file', filePath], {
+    stdout: stdout.stream,
+    stderr: stderr.stream,
+    env: {},
+  });
+
+  assert.equal(exitCode, 1);
+  assert.equal(stdout.read(), '');
+  assert.match(stderr.read(), /AI_API_KEY is missing/);
+});
+
+test('CLI reports unsupported providers', { concurrency: false }, async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'opensentry-cli-'));
+  const filePath = path.join(tmpDir, 'Vault.sol');
+  await writeFile(filePath, 'pragma solidity 0.8.20;\ncontract Vault {}', 'utf8');
+
+  const stdout = makeBuffer();
+  const stderr = makeBuffer();
+  const exitCode = await runCli(['analyze', '--file', filePath], {
+    stdout: stdout.stream,
+    stderr: stderr.stream,
+    env: {
+      AI_PROVIDER: 'bogus',
+      AI_API_KEY: 'test-key',
+      AI_MODEL: 'test-model',
+    },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.match(stderr.read(), /unsupported AI_PROVIDER "bogus"/);
+});
+
+test('CLI help prints usage and exits successfully', { concurrency: false }, async () => {
+  const stdout = makeBuffer();
+  const stderr = makeBuffer();
+
+  const exitCode = await runCli(['--help'], {
+    stdout: stdout.stream,
+    stderr: stderr.stream,
+    env: {},
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(stderr.read(), '');
+  assert.match(stdout.read(), /Usage:/);
 });

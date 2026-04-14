@@ -1,6 +1,6 @@
 import { AGENTS } from './embedded-skills.js';
 import { buildSystemPrompt } from './prompt-wrapper.js';
-import { runAgent } from './agent-runner.js';
+import { runAgent, resolveModelProvider } from './agent-runner.js';
 import { mergeResults } from './merge-results.js';
 
 const DEFAULT_AGENT_CONCURRENCY = 1;
@@ -26,6 +26,9 @@ export async function analyzeContractSourceWithOptions({
     address,
     compiler: sourceResult.compiler,
   };
+
+  // Fail fast on model-provider misconfiguration before we fan out all agents.
+  resolveModelProvider(env);
 
   const agentConfigs = buildAgentConfigs();
   const settledResults = await runAllSettledLimited(
