@@ -5,14 +5,10 @@
 // report.
 
 import { fetchSource } from './lib/fetch-source.js';
-import { AGENTS } from './lib/embedded-skills.js';
-import { buildSystemPrompt } from './lib/prompt-wrapper.js';
-import { runAgent } from './lib/agent-runner.js';
-import { mergeResults } from './lib/merge-results.js';
+import { analyzeContractSource } from './lib/analyze-pipeline.js';
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 const SUPPORTED_CHAINS = new Set(['ethereum', 'base', 'arbitrum', 'optimism', 'polygon']);
-const DEFAULT_AGENT_CONCURRENCY = 1;
 
 export async function onRequestPost(context) {
   const { request, env } = context;
@@ -61,55 +57,16 @@ export async function onRequestPost(context) {
     });
   }
 
-  const metadata = {
-    contractName: sourceResult.contractName,
-    chain,
+  const analysis = await analyzeContractSource({
+    sourceResult,
     address,
-    compiler: sourceResult.compiler,
-  };
-
-  // ---- Build agent configs --------------------------------------------------
-
-  const agentConfigs = Object.entries(AGENTS).map(([key, agent]) => ({
-    key,
-    name: agent.name,
-    systemPrompt: buildSystemPrompt(agent.content),
-  }));
-
-  // ---- Run all agents with bounded concurrency ------------------------------
-  //
-  // Free hosted model tiers are often sensitive to burst concurrency, so we
-  // avoid firing all 8 calls at once by default. We still preserve the
-  // Promise.allSettled-style shape so the merger can handle partial failures.
-
-  const settledResults = await runAllSettledLimited(
-    agentConfigs,
-    getAgentConcurrency(env),
-    cfg => runAgent(cfg.key, cfg.systemPrompt, sourceResult.source, metadata, env),
-  );
-
-  // Pair each settled result with its agent metadata so the merger can map
-  // display names for failed agents that never returned a result.
-  const agentRuns = agentConfigs.map((cfg, i) => ({
-    key: cfg.key,
-    name: cfg.name,
-    settled: settledResults[i],
-  }));
-
-  // ---- Merge + return -------------------------------------------------------
-
-  const report = mergeResults(agentRuns);
+    chain,
+    env,
+  });
 
   return jsonResponse(200, {
     success: true,
-    contractName: sourceResult.contractName,
-    address,
-    chain,
-    isProxy: sourceResult.isProxy,
-    implementationAddress: sourceResult.implementationAddress,
-    implementationContractName: sourceResult.implementation?.contractName || null,
-    timestamp: new Date().toISOString(),
-    report,
+    ...analysis,
   });
 }
 
@@ -118,40 +75,4 @@ function jsonResponse(status, body) {
     status,
     headers: { 'content-type': 'application/json; charset=utf-8' },
   });
-}
-
-function getAgentConcurrency(env) {
-  const raw = env?.AI_AGENT_CONCURRENCY;
-  if (raw == null || raw === '') return DEFAULT_AGENT_CONCURRENCY;
-
-  const parsed = Number.parseInt(String(raw), 10);
-  if (!Number.isFinite(parsed) || parsed < 1) return DEFAULT_AGENT_CONCURRENCY;
-
-  return Math.min(parsed, 8);
-}
-
-async function runAllSettledLimited(items, concurrency, worker) {
-  const results = new Array(items.length);
-  let nextIndex = 0;
-
-  async function runOne() {
-    while (nextIndex < items.length) {
-      const current = nextIndex++;
-      try {
-        results[current] = {
-          status: 'fulfilled',
-          value: await worker(items[current], current),
-        };
-      } catch (reason) {
-        results[current] = {
-          status: 'rejected',
-          reason,
-        };
-      }
-    }
-  }
-
-  const width = Math.max(1, Math.min(concurrency, items.length));
-  await Promise.all(Array.from({ length: width }, () => runOne()));
-  return results;
 }
