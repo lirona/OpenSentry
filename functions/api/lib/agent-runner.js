@@ -23,6 +23,7 @@
 
 import { createGeminiProvider, GEMINI_BASE_URL } from './model-providers/gemini.js';
 import { createClaudeProvider, CLAUDE_API_URL, CLAUDE_API_VERSION } from './model-providers/claude.js';
+import { createCodexProvider, CODEX_API_URL } from './model-providers/codex.js';
 
 // Total wall-clock budget per agent, shared across attempts. The 30s Pages
 // Functions limit minus a 5s orchestrator margin.
@@ -213,6 +214,7 @@ function getModelProvider(env) {
   const providerName = env?.AI_PROVIDER || 'gemini';
   if (providerName === 'gemini') return createGeminiProvider();
   if (providerName === 'claude') return createClaudeProvider();
+  if (providerName === 'codex') return createCodexProvider();
   throw new Error(`runAgent: unsupported AI_PROVIDER "${providerName}"`);
 }
 
@@ -342,4 +344,5 @@ export const __internal = Object.freeze({
   REQUEST_CONFIG,
   CLAUDE_API_URL,
   CLAUDE_API_VERSION,
+  CODEX_API_URL,
 });

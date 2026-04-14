@@ -96,7 +96,7 @@ Edit `.dev.vars` and fill in your keys:
 
 | Variable | Where to get it |
 |----------|----------------|
-| `AI_PROVIDER` | Model provider. Supported: `gemini` or `claude`. Defaults to `gemini` if omitted |
+| `AI_PROVIDER` | Model provider. Supported: `gemini`, `claude`, or `codex`. Defaults to `gemini` if omitted |
 | `AI_API_KEY` | API key for the configured model provider |
 | `AI_MODEL` | Model ID to use. Change this in env vars instead of code |
 | `AI_AGENT_CONCURRENCY` | Optional model-call concurrency. Defaults to `1` for free-tier friendliness |
@@ -142,6 +142,13 @@ npm run cli -- analyze --path ./contracts --out ./report.json --trace-dir ./.ope
 ```
 
 The CLI uses the same `AI_PROVIDER`, `AI_API_KEY`, and `AI_MODEL` environment variables as the API-backed flow.
+
+Example Codex/OpenAI setup:
+
+```bash
+AI_PROVIDER=codex AI_MODEL=gpt-5.3-codex AI_API_KEY=your_openai_key \
+npm run cli -- analyze --file ./contracts/Vault.sol --trace-dir ./.opensentry-trace
+```
 
 ---
 

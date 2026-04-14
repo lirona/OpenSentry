@@ -18,6 +18,7 @@ const { ERROR_CODES, RETRYABLE_CODES, GEMINI_BASE_URL, buildUserMessage, validat
 
 const ENV = { AI_API_KEY: 'test-key', AI_MODEL: 'test-model' };
 const CLAUDE_ENV = { AI_PROVIDER: 'claude', AI_API_KEY: 'test-key', AI_MODEL: 'claude-sonnet-test' };
+const CODEX_ENV = { AI_PROVIDER: 'codex', AI_API_KEY: 'test-key', AI_MODEL: 'gpt-5.3-codex' };
 const KEY = 'access-control';
 const SYSTEM_PROMPT = 'PREAMBLE\n\nAGENT BODY';
 const SOURCE = '// SPDX-License-Identifier: MIT\npragma solidity 0.8.20;\ncontract C { function f() public {} }';
@@ -212,6 +213,79 @@ test('claude provider happy path returns ok:true with parsed result on first att
     assert.equal(sentBody.temperature, __internal.REQUEST_CONFIG.temperature);
     assert.equal(sentBody.max_tokens, __internal.REQUEST_CONFIG.maxOutputTokens);
     assert.match(sentBody.messages[0].content, /--- CONTRACT SOURCE CODE/);
+  } finally {
+    restore();
+  }
+});
+
+test('codex provider happy path returns ok:true with parsed result on first attempt', async () => {
+  let sentBody = null;
+  let sentHeaders = null;
+  let sentUrl = null;
+
+  const restore = stubFetch(async (url, init) => {
+    sentUrl = url;
+    sentHeaders = init.headers;
+    sentBody = JSON.parse(init.body);
+    return {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({
+        choices: [{
+          message: {
+            role: 'assistant',
+            content: JSON.stringify(validAgentOutput()),
+            refusal: null,
+          },
+          finish_reason: 'stop',
+        }],
+      }),
+    };
+  });
+
+  try {
+    const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, CODEX_ENV);
+    assert.equal(out.ok, true);
+    assert.equal(out.key, KEY);
+    assert.equal(out.attempts, 1);
+    assert.equal(out.result.agent, 'Access Control');
+
+    assert.equal(sentUrl, __internal.CODEX_API_URL);
+    assert.equal(sentHeaders.authorization, 'Bearer test-key');
+    assert.equal(sentBody.model, 'gpt-5.3-codex');
+    assert.deepEqual(sentBody.messages, [
+      { role: 'developer', content: SYSTEM_PROMPT },
+      { role: 'user', content: buildUserMessage(METADATA, SOURCE) },
+    ]);
+    assert.equal(sentBody.temperature, __internal.REQUEST_CONFIG.temperature);
+    assert.deepEqual(sentBody.response_format, { type: 'json_object' });
+  } finally {
+    restore();
+  }
+});
+
+test('codex refusal maps to SAFETY_BLOCKED', async () => {
+  const restore = stubFetch(async () => ({
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    json: async () => ({
+      choices: [{
+        message: {
+          role: 'assistant',
+          content: '',
+          refusal: 'Refusing to comply.',
+        },
+        finish_reason: 'stop',
+      }],
+    }),
+  }));
+
+  try {
+    const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, CODEX_ENV);
+    assert.equal(out.ok, false);
+    assert.equal(out.error.code, ERROR_CODES.SAFETY_BLOCKED);
   } finally {
     restore();
   }
