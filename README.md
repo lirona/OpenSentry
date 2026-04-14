@@ -128,6 +128,21 @@ npm test
 
 All tests use stubbed fetch — no API keys or network access needed.
 
+### 6. Run the local CLI
+
+```bash
+npm run cli -- analyze --path ./contracts
+```
+
+Useful options:
+
+```bash
+npm run cli -- analyze --file ./contracts/Vault.sol --json
+npm run cli -- analyze --path ./contracts --out ./report.json --trace-dir ./.opensentry-trace
+```
+
+The CLI uses the same `AI_PROVIDER`, `AI_API_KEY`, and `AI_MODEL` environment variables as the API-backed flow.
+
 ---
 
 ## Architecture

@@ -3,9 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "opensentry": "./bin/opensentry.js"
+  },
   "description": "Web-based smart contract security analysis tool powered by 8 specialized AI agents.",
   "scripts": {
     "build": "node scripts/embed-skills.js",
+    "cli": "node ./bin/opensentry.js",
     "dev": "wrangler pages dev",
     "deploy": "wrangler pages deploy website --project-name opensentry",
     "test": "node --test tests/**/*.test.mjs"
