@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OpenSentry - Audit-Grade Protection for Individuals</title>
+  <title>OpenSentry - Smart Contract Risk Analysis for Non-Technical Users</title>
   <link rel="icon" type="image/png" href="logo.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -34,6 +34,15 @@
     a {
       text-decoration: none;
       color: inherit;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 6px;
+      padding: 1px 6px;
+      color: #f1f1f1;
     }
 
     /* ── Container ── */
@@ -423,9 +432,9 @@
       margin-bottom: 20px;
     }
 
-    .gap-card-icon.green {
-      background: rgba(200, 255, 0, 0.1);
-      color: #F5F547;
+    .gap-card-icon.red {
+      background: rgba(255, 68, 68, 0.1);
+      color: #ff4444;
     }
 
     .gap-card-icon.yellow {
@@ -458,7 +467,7 @@
       border: 1px solid #1e1e1e;
       border-radius: 14px;
       padding: 24px 20px;
-      width: calc(25% - 12px);
+      width: calc(33.333% - 11px);
       text-align: center;
     }
 
@@ -475,8 +484,16 @@
     }
 
     .how-card h3 {
-      font-size: 14px;
+      font-size: 15px;
       font-weight: 600;
+      margin-bottom: 10px;
+      line-height: 1.4;
+    }
+
+    .how-card p {
+      color: #999;
+      font-size: 13px;
+      line-height: 1.6;
     }
 
     .how-callout {
@@ -485,7 +502,7 @@
       font-size: 20px;
       font-weight: 600;
       line-height: 1.6;
-      max-width: 640px;
+      max-width: 760px;
       margin: 56px auto 0;
     }
 
@@ -811,20 +828,19 @@
 
     .value-props-grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 24px;
-      text-align: center;
     }
 
     .value-prop {
       display: flex;
       flex-direction: column;
-      align-items: center;
-      gap: 16px;
+      align-items: flex-start;
+      gap: 14px;
       background: #141414;
       border: 1px solid #1e1e1e;
       border-radius: 16px;
-      padding: 40px 28px;
+      padding: 32px 24px;
       transition: border-color 0.3s;
     }
 
@@ -835,7 +851,7 @@
     .value-prop-icon {
       width: 56px;
       height: 56px;
-      border-radius: 50%;
+      border-radius: 14px;
       background: rgba(245, 245, 71, 0.08);
       border: 1px solid rgba(245, 245, 71, 0.12);
       display: flex;
@@ -850,94 +866,17 @@
       line-height: 1.4;
     }
 
-    /* ── Roadmap ── */
-    .roadmap {
-      padding: 100px 0;
-    }
-
-    .roadmap-timeline {
-      position: relative;
-      max-width: 700px;
-      margin: 0 auto;
-      padding-left: 40px;
-    }
-
-    .roadmap-timeline::before {
-      content: '';
-      position: absolute;
-      left: 15px;
-      top: 0;
-      bottom: 0;
-      width: 2px;
-      background: linear-gradient(180deg, #F5F547 0%, #1e1e1e 100%);
-    }
-
-    .roadmap-item {
-      position: relative;
-      margin-bottom: 48px;
-    }
-
-    .roadmap-item:last-child {
-      margin-bottom: 0;
-    }
-
-    .roadmap-dot {
-      position: absolute;
-      left: -33px;
-      top: 4px;
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: #1e1e1e;
-      border: 2px solid #333;
-    }
-
-    .roadmap-item.active .roadmap-dot {
-      background: #F5F547;
-      border-color: #F5F547;
-      box-shadow: 0 0 12px rgba(245, 245, 71, 0.3);
-    }
-
-    .roadmap-label {
-      display: inline-block;
-      font-size: 12px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
+    .value-prop-question {
       color: #F5F547;
-      background: rgba(245, 245, 71, 0.08);
-      border: 1px solid rgba(245, 245, 71, 0.15);
-      border-radius: 100px;
-      padding: 4px 12px;
-      margin-bottom: 10px;
-    }
-
-    .roadmap-item:not(.active) .roadmap-label {
-      color: #666;
-      background: rgba(255, 255, 255, 0.03);
-      border-color: #1e1e1e;
-    }
-
-    .roadmap-title {
-      font-size: 20px;
-      font-weight: 700;
-      margin-bottom: 6px;
-    }
-
-    .roadmap-desc {
-      color: #888;
-      font-size: 15px;
+      font-size: 13px;
+      font-weight: 600;
       line-height: 1.6;
     }
 
-    .roadmap-status {
-      display: inline-block;
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: #F5F547;
-      margin-left: 10px;
+    .value-prop p {
+      color: #999;
+      font-size: 14px;
+      line-height: 1.6;
     }
 
     /* ── SVG Icons (inline) ── */
@@ -949,7 +888,11 @@
     /* ── Responsive ── */
     @media (max-width: 1024px) {
       .how-card {
-        width: calc(33.333% - 12px);
+        width: calc(50% - 8px);
+      }
+
+      .value-props-grid {
+        grid-template-columns: repeat(2, 1fr);
       }
     }
 
@@ -996,10 +939,6 @@
       .value-props-grid {
         grid-template-columns: 1fr;
         gap: 36px;
-      }
-
-      .roadmap-title {
-        font-size: 17px;
       }
 
       .about-content {
@@ -1081,10 +1020,10 @@
           Wallet Security, Reimagined
         </div>
         <h1 class="hero-heading">
-          Audit-grade <span class="accent">protection</span> for individuals.
+          Smart Contract</br>Risk Analysis for</br><span class="accent">Non-Technical Users</span>
         </h1>
         <p class="hero-text">
-          In blockchain, where individuals hold custody of their own funds, they should also be in charge of their own security. OpenSentry brings audit logic to the wallet layer, shifting security from protocol teams to individual users.
+          OpenSentry is a free, open-source wallet safety and smart contract risk analysis tool for non-technical users. It aims not only to detect vulnerabilities, but also to surface protocol features that may be intentional yet still create meaningful user risk or hidden trust assumptions that users should understand before interacting with a protocol.
         </p>
         <p class="hero-public-good">OpenSentry is a public good.<br>Free and open for everyone.</p>
         <div class="hero-buttons">
@@ -1114,26 +1053,23 @@
       <div class="section-header">
         <h2 class="section-title">The Security Gap</h2>
         <p class="section-subtitle">
-          Every blockchain interaction requires trusting code.
-          <br>Today, only well-funded protocols get professional audits.
-          <br>Individual users interact with all kinds of contracts without protection.
-          <br>Behind the "Confirm Transaction" button may be exploit paths you don't understand.
+          Every blockchain interaction asks users to trust contract behavior they usually cannot inspect. Existing protections often focus on known exploits, blacklists, or verified source code, but non-technical users also face risk from protocol design choices and hidden trust assumptions that may be intentional and still materially affect their funds.
         </p>
       </div>
       <div class="gap-cards">
         <div class="gap-card">
-          <div class="gap-card-icon green">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+          <div class="gap-card-icon red">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3z"/><path d="M8 14c1.2-1.6 2.53-2.4 4-2.4 1.47 0 2.8.8 4 2.4"/><path d="M12 8v.01"/></svg>
           </div>
-          <h3>Protocol Audits</h3>
-          <p>Deep security audits for developers and teams are costly and time-consuming, and are not accessible to many projects.</p>
+          <h3>Not every serious risk is a bug</h3>
+          <p>A contract can avoid obvious implementation vulnerabilities and still expose users to uncapped fees, privileged upgrades, blocked withdrawals, or other dangerous behaviors that are part of the protocol design.</p>
         </div>
         <div class="gap-card">
           <div class="gap-card-icon yellow">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3 21 21"/><path d="M10.58 10.58a2 2 0 1 0 2.83 2.83"/><path d="M9.88 5.09A10.94 10.94 0 0 1 12 4c5 0 9.27 3.11 11 8a10.8 10.8 0 0 1-2.62 4.09"/><path d="M6.61 6.61C4.62 8.03 3.17 9.91 2 12c1.73 4.89 6 8 10 8 1.73 0 3.37-.46 4.79-1.26"/></svg>
           </div>
-          <h3>Individual Risk</h3>
-          <p>Users are left to trust protocols to take care of their security, or use wallet protection services that rely on blacklists and reputation scores but don't analyze the code.</p>
+          <h3>Hidden trust assumptions stay invisible</h3>
+          <p>Users are rarely told who can change fees, upgrade logic, freeze flows, or remove exit paths. Those trust assumptions matter before signing, yet most wallet interfaces do not explain them in plain language.</p>
         </div>
       </div>
     </div>
@@ -1143,105 +1079,131 @@
   <section class="section" id="how-it-works">
     <div class="container">
       <div class="section-header">
-        <h2 class="section-title">How it Works</h2>
+        <h2 class="section-title">How the Pipeline Works</h2>
         <p class="section-subtitle">
-          OpenSentry analyzes a contract like an auditor would, applying techniques that have so far been only available in professional audits.
+          OpenSentry ingests one or more contracts, compiles them through a Solidity facts extraction stage and passes compiler-backed evidence into downstream analysis agents.
         </p>
       </div>
       <div class="how-cards">
         <div class="how-card">
           <div class="how-card-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/><path d="M12 16V10"/><path d="m9.5 12.5 2.5-2.5 2.5 2.5"/></svg>
           </div>
-          <h3>Line-by-line Code Analysis</h3>
+          <h3>Multi-contract ingestion</h3>
+          <p>Accepts one or more contracts, whether passed in as local files or fetched from contract addresses in local CLI and API-backed analysis flows.</p>
         </div>
         <div class="how-card">
           <div class="how-card-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="6" height="6" rx="1"/><rect x="15" y="4" width="6" height="6" rx="1"/><rect x="9" y="14" width="6" height="6" rx="1"/><path d="M9 7h6"/><path d="M12 10v4"/></svg>
           </div>
-          <h3>Static Analysis</h3>
+          <h3>Compiler-backed facts</h3>
+          <p>Normalizes contract structure and behavior into queryable facts such as roles, fees, upgrades, dependencies, and exit conditions.</p>
         </div>
         <div class="how-card">
           <div class="how-card-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
           </div>
-          <h3>Symbolic Execution</h3>
+          <h3>Deterministic findings</h3>
+          <p>Produces high-confidence warnings for clearly detectable user risks such as uncapped fees, no-timelock upgrades, or withdrawal-blocking admin paths.</p>
         </div>
         <div class="how-card">
           <div class="how-card-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h6v14H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/><path d="M19 5h-6v14h6a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"/><path d="M11 12h2"/></svg>
           </div>
-          <h3>Exploit Pattern Detection</h3>
+          <h3>Trusted context separation</h3>
+          <p>Compiler-derived facts are passed downstream as trusted context while raw source remains separately handled as untrusted input.</p>
         </div>
         <div class="how-card">
           <div class="how-card-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="2"/><circle cx="18" cy="7" r="2"/><circle cx="18" cy="17" r="2"/><path d="M8 12h4"/><path d="M14.5 8.5 16 8"/><path d="M14.5 15.5 16 16"/></svg>
           </div>
-          <h3>Business &amp; Financial Logic Verification</h3>
+          <h3>Specialized security agents</h3>
+          <p>Agents analyze access control, token mechanics, external dependencies, MEV, economics, governance, and transparency risks.</p>
         </div>
         <div class="how-card">
           <div class="how-card-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 4 6 4 12 12 6 20 18 20"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5"/><path d="M9 12h6"/><path d="M9 16h6"/></svg>
           </div>
-          <h3>Arithmetic &amp; Precision Verification</h3>
-        </div>
-        <div class="how-card">
-          <div class="how-card-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          </div>
-          <h3>Access Control Verification</h3>
-        </div>
-        <div class="how-card">
-          <div class="how-card-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-          </div>
-          <h3>Execution Path Simulation</h3>
+          <h3>Plain-language reporting</h3>
+          <p>Structured agent findings are merged into a report that explains in plain language what the risk is and why it matters to users.</p>
         </div>
       </div>
-      <p class="how-callout">After analysis, OpenSentry tells you in plain language<br>exactly what the issue is and what it means for your funds.</p>
+      <p class="how-callout">Compiler-backed facts ground the analysis, specialized agents identify risks, and the findings are merged into a plain-language report.</p>
     </div>
   </section>
 
   <!-- ════ Value Props ════ -->
   <section class="value-props">
     <div class="container">
-      <h2 class="section-title" style="text-align:center;margin-bottom:40px;">OpenSentry democratizes audit-level protection.</h2>
+      <h2 class="section-title" style="text-align:center;margin-bottom:16px;">The 8 Analysis Agents</h2>
+      <p class="section-subtitle" style="text-align:center;margin-bottom:40px;">
+        Each agent asks a different core question and investigates a different source of user risk before the findings are merged into one report.
+      </p>
       <div class="value-props-grid">
         <div class="value-prop">
           <div class="value-prop-icon">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
           </div>
-          <h3>Prevents avoidable losses</h3>
+          <h3>Access Control</h3>
+          <p class="value-prop-question"><strong>&ldquo;Who can change things, and what can they change?&rdquo;</strong></p>
+          <p>Maps privileged roles, upgrade paths, initialization flows, pause controls, timelocks, and other admin capabilities that can change user outcomes.</p>
         </div>
         <div class="value-prop">
           <div class="value-prop-icon">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M2 20h2V10H2v10zm20-9a2 2 0 0 0-2-2h-6.31l.95-4.57.03-.32a1.49 1.49 0 0 0-.44-1.06L13.17 2 7.59 7.59A1.98 1.98 0 0 0 7 9v10a2 2 0 0 0 2 2h9a2.01 2.01 0 0 0 1.84-1.21l3.02-7.05A2 2 0 0 0 22 12v-1z"/></svg>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 6l9 5.5"/><path d="M5 10.5V16a2 2 0 0 0 1 1.73l5 3a2 2 0 0 0 2 0l5-3A2 2 0 0 0 19 16v-5.5"/><path d="M12 22v-6"/></svg>
           </div>
-          <h3>Increases trust in decentralized systems</h3>
+          <h3>Token Mechanics</h3>
+          <p class="value-prop-question"><strong>&ldquo;Will this token behave the way the user expects?&rdquo;</strong></p>
+          <p>Checks transfer restrictions, fee-on-transfer logic, rebasing, mint and burn controls, trading switches, approvals, and other token behaviors that can surprise holders.</p>
         </div>
         <div class="value-prop">
           <div class="value-prop-icon">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
           </div>
-          <h3>Expands safe participation in Web3</h3>
+          <h3>Economic &amp; Fees</h3>
+          <p class="value-prop-question"><strong>&ldquo;What does this cost the user, including costs that aren&rsquo;t obvious?&rdquo;</strong></p>
+          <p>Examines explicit fees, hidden costs from slippage or rounding, fee ranges and destinations, reward distribution logic, and deposit or withdrawal conditions.</p>
         </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ════ Public Goods Registration ════ -->
-  <section class="section" id="public-goods" style="background: #000; color: white;">
-    <div class="container">
-      <div class="section-header">
-        <h2 class="section-title" style="color: white;">For Public Goods Projects</h2>
-        <p class="section-subtitle" style="color: #aaa;">
-          Beyond protecting individual users, OpenSentry creates ecosystem-wide security benefits. Projects that pass analysis can earn a <strong>certification badge</strong> — a revocable soulbound NFT and visual badge to display on your Dapp.
-          <br><br>
-          Establish a public, on-chain trust signal for the communities interacting with your contracts.
-        </p>
-      </div>
-      <div style="text-align: center; margin-top: 2rem;">
-        <a href="#" class="btn-primary" onclick="openModal(event)" style="background: #F5F547; color: #000; border: none; padding: 12px 32px; font-weight: 600;">Register Your Project</a>
+        <div class="value-prop">
+          <div class="value-prop-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.75c.63.44 1 1.15 1 1.91V18h6v-1.34c0-.76.37-1.47 1-1.91A7 7 0 0 0 12 2z"/></svg>
+          </div>
+          <h3>Oracle &amp; Dependencies</h3>
+          <p class="value-prop-question"><strong>&ldquo;What external things can break this?&rdquo;</strong></p>
+          <p>Inventories price feeds, fallback oracles, hardcoded dependencies, and third-party systems whose failure, staleness, or manipulation can harm users.</p>
+        </div>
+        <div class="value-prop">
+          <div class="value-prop-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          </div>
+          <h3>MEV &amp; Tx Safety</h3>
+          <p class="value-prop-question"><strong>&ldquo;Can someone exploit the user&rsquo;s transaction in the mempool?&rdquo;</strong></p>
+          <p>Looks for sandwich risk, missing slippage protection, bad deadline handling, frontrunning exposure, flash-loan surface, and other transaction-ordering attacks.</p>
+        </div>
+        <div class="value-prop">
+          <div class="value-prop-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 12 2 2 4-4"/><path d="M12 3l7 4v5c0 5-3 7.5-7 9-4-1.5-7-4-7-9V7l7-4Z"/></svg>
+          </div>
+          <h3>Code Quality</h3>
+          <p class="value-prop-question"><strong>&ldquo;Is there a bug that could lose funds?&rdquo;</strong></p>
+          <p>Focuses on code-level vulnerabilities such as reentrancy, unchecked calls, unsafe casts, delegatecall misuse, storage issues, DoS vectors, and precision loss.</p>
+        </div>
+        <div class="value-prop">
+          <div class="value-prop-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15h6"/><path d="M9 11h6"/></svg>
+          </div>
+          <h3>Transparency</h3>
+          <p class="value-prop-question"><strong>&ldquo;Can the user verify what they&rsquo;re interacting with?&rdquo;</strong></p>
+          <p>Checks source verification, proxy versus implementation clarity, hidden functions, misleading names, and mismatches between documentation and real behavior.</p>
+        </div>
+        <div class="value-prop">
+          <div class="value-prop-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 7v6c0 4.5 3 8.5 8 10 5-1.5 8-5.5 8-10V7l-8-4Z"/><path d="M9 12h6"/><path d="M12 9v6"/></svg>
+          </div>
+          <h3>Governance</h3>
+          <p class="value-prop-question"><strong>&ldquo;How decentralized is this really?&rdquo;</strong></p>
+          <p>Analyzes governance concentration, voting mechanics, proposal thresholds, quorum, timelocks, emergency powers, treasury control, and key-person risk.</p>
+        </div>
       </div>
     </div>
   </section>
@@ -1283,30 +1245,6 @@
     </div>
   </section>
 
-  <!-- ════ Signup Modal ════ -->
-  <div class="modal-overlay" id="signup-modal">
-    <div class="modal">
-      <button class="modal-close" onclick="closeModal()">&times;</button>
-      <h3 class="modal-title">Register Your Public Goods Project</h3>
-      <p class="modal-subtitle">Earn a certification badge and establish trust with your community.</p>
-      <form class="modal-form" onsubmit="handleSubmit(event)">
-        <div class="form-group">
-          <label>Project website</label>
-          <input type="text" name="name" placeholder="https://publicgoods.com" required>
-        </div>
-        <div class="form-group">
-          <label>Contact email</label>
-          <input type="email" name="email" placeholder="you@publicgoods.com" required>
-        </div>
-        <div class="form-group">
-          <label>What does your project do?</span></label>
-          <textarea name="message" placeholder="Brief description of your project..."></textarea>
-        </div>
-        <button type="submit" class="btn-primary" id="submit-btn">Sign Up</button>
-      </form>
-    </div>
-  </div>
-
   <!-- ════ Footer ════ -->
   <footer class="footer">
     <div class="container">
@@ -1316,9 +1254,6 @@
       </div>
       <div class="footer-links">
         <a href="https://github.com/lirona/OpenSentry" target="_blank">GitHub</a>
-        <a href="OpenSentry%20Deck.pdf" target="_blank">Deck</a>
-        <a href="https://giveth.io/project/opensentry" target="_blank">Giveth</a>
-        <a href="https://artizen.fund/index/p/opensentry" target="_blank">Artizen</a>
       </div>
       <div class="footer-copy">&copy; 2026 OpenSentry. All rights reserved.</div>
     </div>
@@ -1351,60 +1286,6 @@
 
     function closeMobileMenu() {
       mobileMenu.classList.remove('active');
-    }
-
-    const signupModal = document.getElementById('signup-modal');
-
-    function openModal(e) {
-      e.preventDefault();
-      signupModal.classList.add('active');
-      document.body.style.overflow = 'hidden';
-    }
-
-    function closeModal() {
-      signupModal.classList.remove('active');
-      document.body.style.overflow = '';
-    }
-
-    signupModal.addEventListener('click', (e) => {
-      if (e.target === signupModal) closeModal();
-    });
-
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') closeModal();
-    });
-
-    const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz5S_d-tftxClyEQJU9B-Gn0auyALKO2Tfe61ERP66wS0VFWZB60nlPJ1FUUBS57zC4fw/exec';
-
-    async function handleSubmit(e) {
-      e.preventDefault();
-      const btn = document.getElementById('submit-btn');
-      const form = e.target;
-
-      btn.textContent = 'Submitting...';
-      btn.disabled = true;
-
-      const formData = new FormData();
-      formData.append('name', form.name.value);
-      formData.append('email', form.email.value);
-      formData.append('message', form.message.value);
-
-      try {
-        await fetch(GOOGLE_SCRIPT_URL, {
-          method: 'POST',
-          mode: 'no-cors',
-          body: formData
-        });
-        btn.textContent = 'Sign Up';
-        btn.disabled = false;
-        form.reset();
-        closeModal();
-        alert('Thanks for signing up! We\'ll send you the Beta version for testing when it\'s ready.');
-      } catch (err) {
-        btn.textContent = 'Sign Up';
-        btn.disabled = false;
-        alert('Something went wrong. Please try again.');
-      }
     }
   </script>
 
