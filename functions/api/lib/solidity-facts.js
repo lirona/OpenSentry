@@ -38,6 +38,7 @@ export function extractSolidityFacts({ compilerOutput, files = [] } = {}) {
       mintFunctions: [],
       burnFunctions: [],
       transferHooks: [],
+      transferFunctions: [],
       feeOnTransferSignals: [],
       blacklistControls: [],
       tradingToggles: [],
@@ -85,6 +86,7 @@ function populateFactsForContract(facts, context) {
         visibility: fn.visibility,
         guardType: fn.guardType,
         modifiers: fn.modifiers,
+        parameters: fn.parameters,
         writes: fn.writes,
       });
     }
@@ -108,6 +110,7 @@ function populateFactsForContract(facts, context) {
         file: context.file,
         line: fn.location.line,
         modifiers: fn.modifiers,
+        guardKinds: fn.guardKinds,
         gatedByPause: fn.gatedByPause,
         gatedByBlacklist: fn.gatedByBlacklist,
       });
@@ -174,6 +177,7 @@ function buildContractContext(contractNode, fileName, sourceContent) {
     mintFunctions: [],
     burnFunctions: [],
     transferHooks: [],
+    transferFunctions: [],
     feeOnTransferSignals: [],
     blacklistControls: [],
     tradingToggles: [],
@@ -299,6 +303,7 @@ function analyzeFunction({
   const isPrivileged = privilegedModifier || inlineSenderCheck;
   const feeCap = inferFeeCap(node.body, parameters, constantValues);
   const feeScale = inferFeeScale(node.body, writes, stateVariables, constantValues);
+  const guardKinds = inferGuardKinds(modifiers, node.body);
 
   for (const category of collectDependenciesFromFunction(node.body)) {
     dependencies.push({
@@ -314,6 +319,18 @@ function analyzeFunction({
   if (/burn/i.test(name)) tokenFeatures.burnFunctions.push(functionFeatureEntry(contractName, name, fileName, location.line));
   if (/^(_transfer|_update|_beforeTokenTransfer|_afterTokenTransfer|transfer)$/i.test(name)) {
     tokenFeatures.transferHooks.push(functionFeatureEntry(contractName, name, fileName, location.line));
+  }
+  if (/^(transfer|transferFrom)$/i.test(name)) {
+    tokenFeatures.transferFunctions.push({
+      contract: contractName,
+      name,
+      file: fileName,
+      line: location.line,
+      modifiers,
+      guardKinds,
+      gatedByPause: guardKinds.includes('pause') || guardKinds.includes('freeze'),
+      gatedByBlacklist: guardKinds.includes('blacklist'),
+    });
   }
   if (FEE_NAME_RE.test(name) && /^transfer$/i.test(name)) {
     tokenFeatures.feeOnTransferSignals.push(functionFeatureEntry(contractName, name, fileName, location.line));
@@ -341,9 +358,10 @@ function analyzeFunction({
     writes,
     guardType: describeGuardType(privilegedModifier, inlineSenderCheck),
     isPrivileged,
-    gatedByPause: modifiers.some((modifier) => /pause|whennotpaused|whenpaused/i.test(modifier)) || bodyContainsName(node.body, /(pause|paused|frozen)/i),
-    gatedByBlacklist: modifiers.some((modifier) => /blacklist|blocklist|denylist/i.test(modifier)) || bodyContainsName(node.body, /(blacklist|blocklist|denylist)/i),
-    hasVisibleTimelock: modifiers.some((modifier) => /(timelock|delay)/i.test(modifier)) || bodyContainsName(node.body, /(timelock|delay)/i),
+    guardKinds,
+    gatedByPause: guardKinds.includes('pause') || guardKinds.includes('freeze'),
+    gatedByBlacklist: guardKinds.includes('blacklist'),
+    hasVisibleTimelock: guardKinds.includes('timelock'),
     feeCap,
     feeScale,
   };
@@ -525,6 +543,24 @@ function bodyContainsName(body, pattern) {
   return found;
 }
 
+function inferGuardKinds(modifiers, body) {
+  const kinds = new Set();
+  const capture = (name) => {
+    if (typeof name !== 'string' || name.length === 0) return;
+    if (/blacklist|blocklist|denylist/i.test(name)) kinds.add('blacklist');
+    if (/freeze|frozen/i.test(name)) kinds.add('freeze');
+    if (/pause|paused|whennotpaused|whenpaused/i.test(name)) kinds.add('pause');
+    if (/timelock|delay/i.test(name)) kinds.add('timelock');
+  };
+
+  for (const modifier of modifiers) capture(modifier);
+  walkAst(body, (node) => {
+    capture(node.name || node.memberName || modifierName(node) || null);
+  });
+
+  return [...kinds];
+}
+
 function referencedName(node) {
   if (!node || typeof node !== 'object') return null;
   if (node.nodeType === 'Identifier') return node.name || null;
@@ -543,8 +579,8 @@ function isMsgSender(node) {
 
 function literalValue(node) {
   if (!node || typeof node !== 'object') return null;
-  if (node.nodeType === 'Literal' && typeof node.value === 'string' && /^\d+$/.test(node.value)) {
-    return Number.parseInt(node.value, 10);
+  if (node.nodeType === 'Literal' && typeof node.value === 'string' && /^\d[\d_]*$/.test(node.value)) {
+    return Number.parseInt(node.value.replaceAll('_', ''), 10);
   }
   return null;
 }
@@ -658,4 +694,5 @@ export const __internal = Object.freeze({
   inferFeeCap,
   inferFeeScale,
   determineHundredPercent,
+  inferGuardKinds,
 });
