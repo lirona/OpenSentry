@@ -36,7 +36,10 @@ export async function analyzeContractSourceWithOptions({
   const settledResults = await runAllSettledLimited(
     agentConfigs,
     getAgentConcurrency(env),
-    cfg => runAgent(cfg.key, cfg.systemPrompt, sourceResult.source, metadata, env),
+    cfg => runAgent(cfg.key, cfg.systemPrompt, sourceResult.source, metadata, env, {
+      facts: compilerFacts.factsStage.facts,
+      deterministicFindings: compilerFacts.deterministicFindings,
+    }),
   );
 
   const agentRuns = agentConfigs.map((cfg, i) => ({
