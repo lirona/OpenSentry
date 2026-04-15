@@ -137,6 +137,9 @@ test('analyzeContractSourceWithOptions includes trace data and serializes failed
     assert.equal(result.trace.factsStage.status, 'ok');
     assert.deepEqual(result.trace.deterministicFindings, []);
     assert.equal(result.trace.mergedReport, result.report);
+    assert.equal(result.trace.agentRuns[0].usedDeterministicContext, true);
+    assert.equal(result.trace.agentRuns[0].factsStageStatus, 'ok');
+    assert.deepEqual(result.trace.agentRuns[0].deterministicFindingIdsSupplied, []);
     assert.equal(result.trace.agentRuns[0].settled.status, 'fulfilled');
     assert.equal(result.trace.agentRuns[0].settled.value.ok, false);
   } finally {
@@ -164,6 +167,9 @@ test('analyzeContractSourceWithOptions falls back cleanly when compiler facts ar
     assert.equal(result.report.overallSeverity, 'SAFE');
     assert.equal(result.trace.factsStage.status, 'unavailable');
     assert.deepEqual(result.trace.deterministicFindings, []);
+    assert.equal(result.trace.agentRuns[0].usedDeterministicContext, false);
+    assert.equal(result.trace.agentRuns[0].factsStageStatus, 'unavailable');
+    assert.deepEqual(result.trace.agentRuns[0].deterministicFindingIdsSupplied, []);
   } finally {
     restore();
   }
@@ -190,6 +196,9 @@ test('analyzeContractSourceWithOptions includes deterministic findings in trace 
     assert.equal(result.trace.factsStage.selectedCompilerVersion, '0.8.20');
     assert.ok(Array.isArray(result.trace.factsStage.facts.feeControls));
     assert.ok(result.trace.deterministicFindings.some((entry) => entry.ruleId === 'fee-uncapped-100'));
+    assert.equal(result.report.overallSeverity, 'CRITICAL');
+    assert.ok(result.report.findings.some((entry) => entry.agents.includes('Compiler Facts')));
+    assert.deepEqual(result.trace.agentRuns[0].deterministicFindingIdsSupplied, ['fee-uncapped-100']);
   } finally {
     restore();
   }

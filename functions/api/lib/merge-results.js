@@ -78,12 +78,14 @@ const CHECK_SIMILARITY_THRESHOLD = 0.6;
 
 /**
  * @param {Array<{key: string, name: string, settled: {status: string, value?: any, reason?: any}}>} agentRuns
+ * @param {{deterministicFindings?: Array<object>}} [options]
  * @returns {{overallSeverity: string, criticalCount: number, warningCount: number, infoCount: number, findings: Array, agentSummaries: Array}}
  */
-export function mergeResults(agentRuns) {
+export function mergeResults(agentRuns, options = {}) {
   if (!Array.isArray(agentRuns)) {
     throw new TypeError('mergeResults: agentRuns must be an array');
   }
+  const deterministicFindings = normalizeDeterministicFindings(options.deterministicFindings);
 
   // 7a. Classify each run.
   const processed = agentRuns.map(classifyRun);
@@ -111,6 +113,18 @@ export function mergeResults(agentRuns) {
         _sourceAgents: [p.agentName],
       });
     }
+  }
+  for (const f of deterministicFindings) {
+    if (f.severity === 'SAFE') continue;
+    allFindings.push({
+      check: f.check,
+      severity: f.severity,
+      location: f.location,
+      summary: f.summary,
+      detail: f.detail,
+      user_impact: f.user_impact,
+      _sourceAgents: ['Compiler Facts'],
+    });
   }
 
   // 7c / 7d. Dedup by root cause + conflict resolution.
@@ -143,7 +157,12 @@ export function mergeResults(agentRuns) {
     else if (f.severity === 'INFO') infoCount++;
   }
 
-  const overallSeverity = computeOverallSeverity(processed);
+  const processedOverallSeverity = computeOverallSeverity(processed);
+  const deterministicOverallSeverity =
+    deterministicFindings.length > 0 ? maxSeverityOf(deterministicFindings) : null;
+  const overallSeverity = deterministicOverallSeverity
+    ? maxSeverity(processedOverallSeverity, deterministicOverallSeverity)
+    : processedOverallSeverity;
 
   // 7g. Emit agentSummaries in canonical order (always 8 entries).
   const agentSummaries = buildAgentSummaries(processed);
@@ -156,6 +175,11 @@ export function mergeResults(agentRuns) {
     findings,
     agentSummaries,
   };
+}
+
+function normalizeDeterministicFindings(findings) {
+  if (!Array.isArray(findings)) return [];
+  return findings.filter(hasRequiredFields);
 }
 
 // ---- 7a. Classify -----------------------------------------------------------
@@ -276,6 +300,10 @@ function maxSeverityOf(findings) {
     if (r > maxRank) { maxRank = r; max = f.severity; }
   }
   return max;
+}
+
+function maxSeverity(a, b) {
+  return (SEVERITY_RANK[b] || 0) > (SEVERITY_RANK[a] || 0) ? b : a;
 }
 
 // ---- 7c / 7d. Dedup + conflict resolution -----------------------------------
@@ -443,6 +471,8 @@ export const __internal = Object.freeze({
   computeOverallSeverity,
   buildAgentSummaries,
   maxSeverityOf,
+  maxSeverity,
+  normalizeDeterministicFindings,
   SEVERITY_RANK,
   CANONICAL_AGENTS,
   FINDING_CAP,

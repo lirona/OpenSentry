@@ -130,6 +130,17 @@ test('CLI can save final JSON and trace artifacts', { concurrency: false }, asyn
     const merged = JSON.parse(await readFile(path.join(traceDir, 'merged-report.json'), 'utf8'));
     assert.equal(merged.overallSeverity, 'SAFE');
 
+    const factsStage = JSON.parse(await readFile(path.join(traceDir, 'facts-stage.json'), 'utf8'));
+    assert.equal(factsStage.status, 'ok');
+
+    const deterministicFindings = JSON.parse(await readFile(path.join(traceDir, 'deterministic-findings.json'), 'utf8'));
+    assert.deepEqual(deterministicFindings, []);
+
+    const accessControlRun = JSON.parse(await readFile(path.join(traceDir, 'agent-results', 'access-control.json'), 'utf8'));
+    assert.equal(accessControlRun.usedDeterministicContext, true);
+    assert.equal(accessControlRun.factsStageStatus, 'ok');
+    assert.deepEqual(accessControlRun.deterministicFindingIdsSupplied, []);
+
     const sourceText = await readFile(path.join(traceDir, 'source.txt'), 'utf8');
     assert.match(sourceText, /\/\/ === File: IERC20\.sol ===/);
     assert.match(sourceText, /\/\/ === File: Vault\.sol ===/);

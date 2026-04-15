@@ -218,6 +218,8 @@ async function writeTraceFiles(traceDir, sourceResult, trace) {
     await writeFile(path.join(traceDir, 'agent-results', `${run.key}.json`), `${JSON.stringify(run, null, 2)}\n`, 'utf8');
   }
 
+  await writeFile(path.join(traceDir, 'facts-stage.json'), `${JSON.stringify(trace.factsStage, null, 2)}\n`, 'utf8');
+  await writeFile(path.join(traceDir, 'deterministic-findings.json'), `${JSON.stringify(trace.deterministicFindings, null, 2)}\n`, 'utf8');
   await writeFile(path.join(traceDir, 'merged-report.json'), `${JSON.stringify(trace.mergedReport, null, 2)}\n`, 'utf8');
 }
 

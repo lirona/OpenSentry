@@ -79,6 +79,20 @@ function agentOutput(overrides = {}) {
   };
 }
 
+function compilerFinding(overrides = {}) {
+  return {
+    ruleId: 'fee-uncapped-100',
+    source: 'Compiler Facts',
+    check: 'Configurable fee can reach 100%',
+    severity: 'CRITICAL',
+    location: 'Vault.sol:77',
+    summary: 'feeBps is configurable without a visible cap and can reach 100% of the fee scale.',
+    detail: 'setFeeBps updates feeBps without a visible maximum.',
+    user_impact: 'Users could lose all of the transferred value to fees.',
+    ...overrides,
+  };
+}
+
 // Build a complete 8-agent input, defaulting every agent to SAFE-empty.
 function allSafe() {
   return CANONICAL_AGENTS.map(({ key, name }) =>
@@ -357,6 +371,18 @@ test('aggregates: counts and overallSeverity reflect merged findings + agents', 
   assert.equal(report.infoCount, 1);
 });
 
+test('deterministic findings are merged into final findings with Compiler Facts label', () => {
+  const report = mergeResults(allSafe(), {
+    deterministicFindings: [compilerFinding({ severity: 'WARNING' })],
+  });
+
+  assert.equal(report.findings.length, 1);
+  assert.deepEqual(report.findings[0].agents, ['Compiler Facts']);
+  assert.equal(report.findings[0].severity, 'WARNING');
+  assert.equal(report.overallSeverity, 'WARNING');
+  assert.equal(report.warningCount, 1);
+});
+
 test('aggregates: all SAFE → overall SAFE, zero counts', () => {
   const report = mergeResults(allSafe());
   assert.equal(report.overallSeverity, 'SAFE');
@@ -397,6 +423,18 @@ test('agentSummaries: always 8 entries in canonical order, missing → failed', 
     assert.equal(report.agentSummaries[i].status, 'failed');
     assert.equal(report.agentSummaries[i].failureReason, 'missing agent result');
   }
+});
+
+test('agentSummaries stay fixed at 8 entries when deterministic findings are present', () => {
+  const report = mergeResults(allSafe(), {
+    deterministicFindings: [compilerFinding()],
+  });
+
+  assert.equal(report.agentSummaries.length, 8);
+  assert.deepEqual(
+    report.agentSummaries.map((summary) => summary.agent),
+    CANONICAL_AGENTS.map((agent) => agent.name),
+  );
 });
 
 // ---- SAFE findings are never individually listed ---------------------------
