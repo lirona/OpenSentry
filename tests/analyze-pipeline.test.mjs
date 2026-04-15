@@ -43,6 +43,45 @@ const SOURCE_RESULT = {
   implementationAddress: null,
 };
 
+const FEE_SOURCE_RESULT = {
+  ...SOURCE_RESULT,
+  source: [
+    'pragma solidity 0.8.20;',
+    'contract Vault {',
+    '  address public owner;',
+    '  uint256 public feeBps;',
+    '  modifier onlyOwner() { require(msg.sender == owner, "no"); _; }',
+    '  function setFeeBps(uint256 value) external onlyOwner { feeBps = value; }',
+    '  function preview(uint256 amount) external view returns (uint256) {',
+    '    return amount - ((amount * feeBps) / 10_000);',
+    '  }',
+    '}',
+  ].join('\n'),
+  files: [{
+    name: 'Vault.sol',
+    content: [
+      'pragma solidity 0.8.20;',
+      'contract Vault {',
+      '  address public owner;',
+      '  uint256 public feeBps;',
+      '  modifier onlyOwner() { require(msg.sender == owner, "no"); _; }',
+      '  function setFeeBps(uint256 value) external onlyOwner { feeBps = value; }',
+      '  function preview(uint256 amount) external view returns (uint256) {',
+      '    return amount - ((amount * feeBps) / 10_000);',
+      '  }',
+      '}',
+    ].join('\n'),
+  }],
+};
+
+const UNSUPPORTED_SOURCE_RESULT = {
+  ...SOURCE_RESULT,
+  contractName: 'Future',
+  compiler: '',
+  source: 'pragma solidity ^0.8.29;\ncontract Future {}',
+  files: [{ name: 'Future.sol', content: 'pragma solidity ^0.8.29;\ncontract Future {}' }],
+};
+
 const ENV = { AI_API_KEY: 'test-key', AI_MODEL: 'test-model' };
 
 test('analyzeContractSource returns merged analysis without trace by default', { concurrency: false }, async () => {
@@ -95,9 +134,62 @@ test('analyzeContractSourceWithOptions includes trace data and serializes failed
 
     assert.equal(result.trace.agentConfigs.length, 8);
     assert.equal(result.trace.agentRuns.length, 8);
+    assert.equal(result.trace.factsStage.status, 'ok');
+    assert.deepEqual(result.trace.deterministicFindings, []);
     assert.equal(result.trace.mergedReport, result.report);
     assert.equal(result.trace.agentRuns[0].settled.status, 'fulfilled');
     assert.equal(result.trace.agentRuns[0].settled.value.ok, false);
+  } finally {
+    restore();
+  }
+});
+
+test('analyzeContractSourceWithOptions falls back cleanly when compiler facts are unavailable', { concurrency: false }, async () => {
+  let calls = 0;
+  const restore = stubFetch(async () => {
+    calls++;
+    return geminiSafe('Access Control');
+  });
+
+  try {
+    const result = await analyzeContractSourceWithOptions({
+      sourceResult: UNSUPPORTED_SOURCE_RESULT,
+      address: 'local://Future.sol',
+      chain: 'local',
+      env: ENV,
+      includeTrace: true,
+    });
+
+    assert.equal(calls, 8);
+    assert.equal(result.report.overallSeverity, 'SAFE');
+    assert.equal(result.trace.factsStage.status, 'unavailable');
+    assert.deepEqual(result.trace.deterministicFindings, []);
+  } finally {
+    restore();
+  }
+});
+
+test('analyzeContractSourceWithOptions includes deterministic findings in trace when compiler facts succeed', { concurrency: false }, async () => {
+  let calls = 0;
+  const restore = stubFetch(async () => {
+    calls++;
+    return geminiSafe('Access Control');
+  });
+
+  try {
+    const result = await analyzeContractSourceWithOptions({
+      sourceResult: FEE_SOURCE_RESULT,
+      address: 'local://Vault.sol',
+      chain: 'local',
+      env: ENV,
+      includeTrace: true,
+    });
+
+    assert.equal(calls, 8);
+    assert.equal(result.trace.factsStage.status, 'ok');
+    assert.equal(result.trace.factsStage.selectedCompilerVersion, '0.8.20');
+    assert.ok(Array.isArray(result.trace.factsStage.facts.feeControls));
+    assert.ok(result.trace.deterministicFindings.some((entry) => entry.ruleId === 'fee-uncapped-100'));
   } finally {
     restore();
   }

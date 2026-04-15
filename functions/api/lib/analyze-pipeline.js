@@ -1,6 +1,7 @@
 import { AGENTS } from './embedded-skills.js';
 import { buildSystemPrompt } from './prompt-wrapper.js';
 import { runAgent, resolveModelProvider } from './agent-runner.js';
+import { runCompilerFactsStage } from './compiler-facts-stage.js';
 import { mergeResults } from './merge-results.js';
 
 const DEFAULT_AGENT_CONCURRENCY = 1;
@@ -26,6 +27,7 @@ export async function analyzeContractSourceWithOptions({
     address,
     compiler: sourceResult.compiler,
   };
+  const compilerFacts = runCompilerFactsStage(sourceResult);
 
   // Fail fast on model-provider misconfiguration before we fan out all agents.
   resolveModelProvider(env);
@@ -68,6 +70,8 @@ export async function analyzeContractSourceWithOptions({
         systemPrompt: cfg.systemPrompt,
       })),
       agentRuns: agentRuns.map(serializeAgentRun),
+      factsStage: compilerFacts.factsStage,
+      deterministicFindings: compilerFacts.deterministicFindings,
       mergedReport: report,
     },
   };
