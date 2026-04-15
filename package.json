@@ -16,5 +16,15 @@
   },
   "devDependencies": {
     "wrangler": "^4.81.0"
+  },
+  "dependencies": {
+    "semver": "^7.7.4",
+    "solc-0-4-26": "npm:solc@^0.4.26",
+    "solc-0-5-17": "npm:solc@^0.5.17",
+    "solc-0-6-12": "npm:solc@^0.6.12",
+    "solc-0-7-6": "npm:solc@^0.7.6",
+    "solc-0-8-20": "npm:solc@^0.8.20",
+    "solc-0-8-24": "npm:solc@^0.8.24",
+    "solc-0-8-28": "npm:solc@^0.8.28"
   }
 }
