@@ -43,7 +43,12 @@ export async function loadLocalSource(inputPath) {
       content,
     }]);
 
-    return buildSuccessResult(absolutePath, bundle, inferContractNameFromFileName(path.basename(absolutePath)));
+    return buildSuccessResult(
+      absolutePath,
+      bundle,
+      inferContractNameFromFileName(path.basename(absolutePath)),
+      inferCompilerHint(bundle.files),
+    );
   }
 
   if (!stats.isDirectory()) {
@@ -66,8 +71,9 @@ export async function loadLocalSource(inputPath) {
   files.sort((a, b) => a.name.localeCompare(b.name));
   const bundle = buildSourceBundle(files);
   const contractName = inferDirectoryContractName(absolutePath, files);
+  const compiler = inferCompilerHint(bundle.files);
 
-  return buildSuccessResult(absolutePath, bundle, contractName);
+  return buildSuccessResult(absolutePath, bundle, contractName, compiler);
 }
 
 async function readSolidityFiles(rootDir, currentDir) {
@@ -101,11 +107,39 @@ function inferDirectoryContractName(absolutePath, files) {
   return inferContractNameFromFileName(files[0]?.name);
 }
 
-function buildSuccessResult(absolutePath, bundle, contractName) {
+function inferCompilerHint(files) {
+  const pragmas = new Set();
+
+  for (const file of files) {
+    for (const pragma of extractSolidityPragmas(file.content)) {
+      pragmas.add(pragma);
+    }
+  }
+
+  if (pragmas.size === 0) return '';
+  if (pragmas.size === 1) return `pragma:${[...pragmas][0]}`;
+  return 'pragma:mixed';
+}
+
+function extractSolidityPragmas(source) {
+  if (typeof source !== 'string' || source.length === 0) return [];
+
+  const matches = source.matchAll(/\bpragma\s+solidity\s+([^;]+);/g);
+  const pragmas = [];
+
+  for (const match of matches) {
+    const normalized = match[1].replace(/\s+/g, ' ').trim();
+    if (normalized) pragmas.push(normalized);
+  }
+
+  return pragmas;
+}
+
+function buildSuccessResult(absolutePath, bundle, contractName, compiler) {
   return {
     success: true,
     contractName,
-    compiler: '',
+    compiler,
     optimization: {
       enabled: false,
       runs: 0,
@@ -120,3 +154,8 @@ function buildSuccessResult(absolutePath, bundle, contractName) {
     localPath: absolutePath,
   };
 }
+
+export const __internal = Object.freeze({
+  extractSolidityPragmas,
+  inferCompilerHint,
+});

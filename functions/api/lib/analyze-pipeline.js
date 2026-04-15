@@ -1,6 +1,7 @@
 import { AGENTS } from './embedded-skills.js';
 import { buildSystemPrompt } from './prompt-wrapper.js';
 import { runAgent, resolveModelProvider } from './agent-runner.js';
+import { runCompilerFactsStage } from './compiler-facts-stage.js';
 import { mergeResults } from './merge-results.js';
 
 const DEFAULT_AGENT_CONCURRENCY = 1;
@@ -26,6 +27,11 @@ export async function analyzeContractSourceWithOptions({
     address,
     compiler: sourceResult.compiler,
   };
+  const compilerFacts = runCompilerFactsStage(sourceResult);
+  const deterministicFindingIds = compilerFacts.deterministicFindings
+    .map((finding) => finding.ruleId)
+    .filter((ruleId) => typeof ruleId === 'string' && ruleId.length > 0);
+  const usedDeterministicContext = compilerFacts.factsStage.status === 'ok';
 
   // Fail fast on model-provider misconfiguration before we fan out all agents.
   resolveModelProvider(env);
@@ -34,16 +40,24 @@ export async function analyzeContractSourceWithOptions({
   const settledResults = await runAllSettledLimited(
     agentConfigs,
     getAgentConcurrency(env),
-    cfg => runAgent(cfg.key, cfg.systemPrompt, sourceResult.source, metadata, env),
+    cfg => runAgent(cfg.key, cfg.systemPrompt, sourceResult.source, metadata, env, {
+      facts: compilerFacts.factsStage.facts,
+      deterministicFindings: compilerFacts.deterministicFindings,
+    }),
   );
 
   const agentRuns = agentConfigs.map((cfg, i) => ({
     key: cfg.key,
     name: cfg.name,
     settled: settledResults[i],
+    usedDeterministicContext,
+    factsStageStatus: compilerFacts.factsStage.status,
+    deterministicFindingIdsSupplied: deterministicFindingIds,
   }));
 
-  const report = mergeResults(agentRuns);
+  const report = mergeResults(agentRuns, {
+    deterministicFindings: compilerFacts.deterministicFindings,
+  });
   const analysis = {
     contractName: sourceResult.contractName,
     address,
@@ -68,6 +82,8 @@ export async function analyzeContractSourceWithOptions({
         systemPrompt: cfg.systemPrompt,
       })),
       agentRuns: agentRuns.map(serializeAgentRun),
+      factsStage: compilerFacts.factsStage,
+      deterministicFindings: compilerFacts.deterministicFindings,
       mergedReport: report,
     },
   };
@@ -122,6 +138,11 @@ function serializeAgentRun(run) {
     return {
       key: run.key,
       name: run.name,
+      usedDeterministicContext: Boolean(run.usedDeterministicContext),
+      factsStageStatus: run.factsStageStatus || 'unknown',
+      deterministicFindingIdsSupplied: Array.isArray(run.deterministicFindingIdsSupplied)
+        ? run.deterministicFindingIdsSupplied
+        : [],
       settled: {
         status: 'fulfilled',
         value: run.settled.value,
@@ -132,6 +153,11 @@ function serializeAgentRun(run) {
   return {
     key: run?.key || 'unknown',
     name: run?.name || 'Unknown Agent',
+    usedDeterministicContext: Boolean(run?.usedDeterministicContext),
+    factsStageStatus: run?.factsStageStatus || 'unknown',
+    deterministicFindingIdsSupplied: Array.isArray(run?.deterministicFindingIdsSupplied)
+      ? run.deterministicFindingIdsSupplied
+      : [],
     settled: {
       status: 'rejected',
       reason: serializeError(run?.settled?.reason),
