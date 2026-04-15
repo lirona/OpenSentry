@@ -43,12 +43,12 @@ export function runCompilerFactsStage(sourceResult) {
     };
   }
 
-  if (compiled.diagnostics.some((entry) => entry.severity === 'error')) {
+  if (!hasAstForAllRequestedFiles(compiled.compilerOutput, sourceResult.files || [])) {
     return {
       factsStage: {
         ...base,
         status: 'compile_error',
-        reason: 'compiler_errors',
+        reason: 'missing_requested_asts',
       },
       deterministicFindings: [],
     };
@@ -82,3 +82,20 @@ export function runCompilerFactsStage(sourceResult) {
     };
   }
 }
+
+function hasAstForAllRequestedFiles(compilerOutput, files) {
+  if (!compilerOutput || typeof compilerOutput !== 'object') return false;
+  if (!Array.isArray(files) || files.length === 0) return false;
+
+  for (const file of files) {
+    const fileName = file?.name;
+    if (typeof fileName !== 'string' || fileName.length === 0) return false;
+    if (!compilerOutput.sources?.[fileName]?.ast) return false;
+  }
+
+  return true;
+}
+
+export const __internal = Object.freeze({
+  hasAstForAllRequestedFiles,
+});

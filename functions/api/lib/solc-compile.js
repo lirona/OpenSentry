@@ -1,5 +1,78 @@
 import { selectBundledSolc } from './solc-version-selector.js';
 
+const KNOWN_IMPORT_STUBS = Object.freeze({
+  '@openzeppelin/contracts/access/Ownable.sol': [
+    'pragma solidity >=0.4.0 <0.9.0;',
+    'contract Ownable {',
+    '  address private _owner;',
+    '  constructor(address initialOwner) public { _owner = initialOwner; }',
+    '  modifier onlyOwner() { _; }',
+    '  function owner() public view returns (address) { return _owner; }',
+    '}',
+  ].join('\n'),
+  '@openzeppelin/contracts/utils/Pausable.sol': [
+    'pragma solidity >=0.4.0 <0.9.0;',
+    'contract Pausable {',
+    '  modifier whenNotPaused() { _; }',
+    '  modifier whenPaused() { _; }',
+    '  function _pause() internal {}',
+    '  function _unpause() internal {}',
+    '}',
+  ].join('\n'),
+  '@openzeppelin/contracts/utils/ReentrancyGuard.sol': [
+    'pragma solidity >=0.4.0 <0.9.0;',
+    'contract ReentrancyGuard {',
+    '  modifier nonReentrant() { _; }',
+    '}',
+  ].join('\n'),
+  '@openzeppelin/contracts/utils/cryptography/EIP712.sol': [
+    'pragma solidity >=0.4.0 <0.9.0;',
+    'contract EIP712 {',
+    '  constructor(string memory name, string memory version) public {}',
+    '  function _hashTypedDataV4(bytes32 hash) internal view returns (bytes32) { return hash; }',
+    '  function _domainSeparatorV4() internal view returns (bytes32) { return bytes32(0); }',
+    '}',
+  ].join('\n'),
+  '@openzeppelin/contracts/utils/cryptography/ECDSA.sol': [
+    'pragma solidity >=0.4.0 <0.9.0;',
+    'library ECDSA {',
+    '  function recover(bytes32 hash, bytes memory signature) internal pure returns (address) {',
+    '    return address(0);',
+    '  }',
+    '}',
+  ].join('\n'),
+  '@openzeppelin/contracts/token/ERC20/IERC20.sol': [
+    'pragma solidity >=0.4.0 <0.9.0;',
+    'interface IERC20 {',
+    '  function transfer(address to, uint256 value) external returns (bool);',
+    '  function transferFrom(address from, address to, uint256 value) external returns (bool);',
+    '  function approve(address spender, uint256 value) external returns (bool);',
+    '  function balanceOf(address account) external view returns (uint256);',
+    '}',
+  ].join('\n'),
+  '@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol': [
+    'pragma solidity >=0.4.0 <0.9.0;',
+    'import "@openzeppelin/contracts/token/ERC20/IERC20.sol";',
+    'library SafeERC20 {',
+    '  function safeTransfer(IERC20 token, address to, uint256 value) internal {}',
+    '  function safeTransferFrom(IERC20 token, address from, address to, uint256 value) internal {}',
+    '  function safeApprove(IERC20 token, address spender, uint256 value) internal {}',
+    '}',
+  ].join('\n'),
+  '@openzeppelin/contracts/token/ERC20/ERC20.sol': [
+    'pragma solidity >=0.8.0 <0.9.0;',
+    'contract ERC20 {',
+    '  constructor(string memory name, string memory symbol) {}',
+    '  function totalSupply() public view virtual returns (uint256) { return 0; }',
+    '  function transfer(address to, uint256 value) public virtual returns (bool) { return true; }',
+    '  function balanceOf(address account) public view virtual returns (uint256) { return 0; }',
+    '  function _transfer(address from, address to, uint256 value) internal virtual {}',
+    '  function _update(address from, address to, uint256 value) internal virtual {}',
+    '  function _mint(address to, uint256 value) internal virtual {}',
+    '}',
+  ].join('\n'),
+});
+
 export function compileSourceWithBundledSolc(sourceResult) {
   if (!sourceResult || typeof sourceResult !== 'object') {
     throw new TypeError('compileSourceWithBundledSolc: sourceResult must be an object');
@@ -29,11 +102,12 @@ export function compileSourceWithBundledSolc(sourceResult) {
     };
   }
 
-  const input = buildStandardJsonInput(sourceResult.files);
-
   let compilerOutput;
+  let input = buildStandardJsonInput(sourceResult.files);
   try {
-    compilerOutput = compileStandardJson(selection.compiler, input);
+    const compiled = compileWithGeneratedImportStubs(selection.compiler, input);
+    compilerOutput = compiled.compilerOutput;
+    input = compiled.input;
   } catch (error) {
     return {
       ...base,
@@ -54,9 +128,15 @@ export function compileSourceWithBundledSolc(sourceResult) {
 }
 
 function buildStandardJsonInput(files) {
+  return buildStandardJsonInputFromSources(
+    Object.fromEntries(files.map((file) => [file.name, { content: file.content }])),
+  );
+}
+
+function buildStandardJsonInputFromSources(sources) {
   return {
     language: 'Solidity',
-    sources: Object.fromEntries(files.map((file) => [file.name, { content: file.content }])),
+    sources,
     settings: {
       outputSelection: {
         '*': {
@@ -64,6 +144,27 @@ function buildStandardJsonInput(files) {
         },
       },
     },
+  };
+}
+
+function compileWithGeneratedImportStubs(compiler, initialInput) {
+  let input = initialInput;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const compilerOutput = compileStandardJson(compiler, input);
+    const missingImports = collectMissingImportPaths(compilerOutput.errors || []);
+    const nextSources = addGeneratedImportStubs(input.sources, missingImports);
+
+    if (Object.keys(nextSources).length === Object.keys(input.sources).length) {
+      return { compilerOutput, input };
+    }
+
+    input = buildStandardJsonInputFromSources(nextSources);
+  }
+
+  return {
+    compilerOutput: compileStandardJson(compiler, input),
+    input,
   };
 }
 
@@ -103,6 +204,62 @@ function normalizeThrownDiagnostic(error) {
   };
 }
 
+function collectMissingImportPaths(errors) {
+  const paths = new Set();
+  for (const error of errors) {
+    const message = error?.message || error?.formattedMessage || '';
+    const match = message.match(/Source "([^"]+)" not found/);
+    if (match) paths.add(normalizeImportPath(match[1]));
+  }
+  return [...paths];
+}
+
+function addGeneratedImportStubs(existingSources, importPaths) {
+  const sources = { ...existingSources };
+
+  for (const rawPath of importPaths) {
+    const importPath = normalizeImportPath(rawPath);
+    if (sources[importPath]) continue;
+
+    const stub = generateImportStub(importPath);
+    if (!stub) continue;
+
+    sources[importPath] = { content: stub };
+  }
+
+  return sources;
+}
+
+function generateImportStub(importPath) {
+  if (KNOWN_IMPORT_STUBS[importPath]) return KNOWN_IMPORT_STUBS[importPath];
+
+  const symbol = inferPrimarySymbol(importPath);
+  if (!symbol) return null;
+
+  if (/^I[A-Z]/.test(symbol)) {
+    return [
+      'pragma solidity >=0.4.0 <0.9.0;',
+      `interface ${symbol} {}`,
+    ].join('\n');
+  }
+
+  return [
+    'pragma solidity >=0.4.0 <0.9.0;',
+    `contract ${symbol} {}`,
+  ].join('\n');
+}
+
+function inferPrimarySymbol(importPath) {
+  const normalized = normalizeImportPath(importPath);
+  const baseName = normalized.split('/').pop()?.replace(/\.sol$/i, '') || '';
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(baseName)) return null;
+  return baseName;
+}
+
+function normalizeImportPath(importPath) {
+  return String(importPath || '').replace(/^\.\/+/, '');
+}
+
 function toLineNumber(sourceLocation, sources) {
   return offsetToLineColumn(sourceLocation, sources)?.line ?? null;
 }
@@ -131,7 +288,14 @@ function offsetToLineColumn(sourceLocation, sources) {
 
 export const __internal = Object.freeze({
   buildStandardJsonInput,
+  buildStandardJsonInputFromSources,
+  compileWithGeneratedImportStubs,
   compileStandardJson,
   normalizeDiagnostics,
   offsetToLineColumn,
+  collectMissingImportPaths,
+  addGeneratedImportStubs,
+  generateImportStub,
+  inferPrimarySymbol,
+  normalizeImportPath,
 });

@@ -75,6 +75,28 @@ test('returns unavailable when no compatible bundled compiler exists', () => {
   assert.equal(result.compilerOutput, null);
 });
 
+test('generates minimal import stubs so AST output is still available for imported contracts', () => {
+  const result = compileSourceWithBundledSolc({
+    compiler: 'pragma:^0.8.24',
+    files: [
+      {
+        name: 'Vault.sol',
+        content: [
+          'pragma solidity ^0.8.24;',
+          'import "@openzeppelin/contracts/access/Ownable.sol";',
+          'contract Vault is Ownable {',
+          '  constructor() Ownable(msg.sender) {}',
+          '}',
+        ].join('\n'),
+      },
+    ],
+  });
+
+  assert.equal(result.status, 'ok');
+  assert.ok(result.compilerOutput.sources['Vault.sol'].ast);
+  assert.ok(result.compilerOutput.sources['@openzeppelin/contracts/access/Ownable.sol'].ast);
+});
+
 test('buildStandardJsonInput produces standard-json compiler input', () => {
   const input = __internal.buildStandardJsonInput([
     { name: 'Vault.sol', content: 'pragma solidity 0.8.20;\ncontract Vault {}' },
@@ -87,4 +109,16 @@ test('buildStandardJsonInput produces standard-json compiler input', () => {
       '': ['ast'],
     },
   });
+});
+
+test('collectMissingImportPaths normalizes unresolved import paths', () => {
+  const paths = __internal.collectMissingImportPaths([
+    { message: 'Source "./interfaces/IAntseedRegistry.sol" not found: File import callback not supported' },
+    { message: 'Source "@openzeppelin/contracts/access/Ownable.sol" not found: File import callback not supported' },
+  ]);
+
+  assert.deepEqual(paths, [
+    'interfaces/IAntseedRegistry.sol',
+    '@openzeppelin/contracts/access/Ownable.sol',
+  ]);
 });
