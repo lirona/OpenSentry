@@ -191,6 +191,12 @@ OpenSentry is open source and welcomes contributions. If you are a security rese
 
 ---
 
+## Support the Project
+
+OpenSentry is a public good. If you find it useful, consider donating via [Giveth](https://giveth.io/project/opensentry).
+
+---
+
 ## License
 
 MIT — free to use, fork, and build on.
