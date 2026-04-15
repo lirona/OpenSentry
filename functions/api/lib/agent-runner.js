@@ -24,13 +24,14 @@
 import { createGeminiProvider, GEMINI_BASE_URL } from './model-providers/gemini.js';
 import { createClaudeProvider, CLAUDE_API_URL, CLAUDE_API_VERSION } from './model-providers/claude.js';
 import { createCodexProvider, CODEX_API_URL } from './model-providers/codex.js';
+import { createCodexCliProvider, CODEX_CLI_BINARY } from './model-providers/codex-cli.js';
 
 // Total wall-clock budget per agent, shared across attempts. The 30s Pages
 // Functions limit minus a 5s orchestrator margin.
-const TOTAL_BUDGET_MS = 25_000;
+const DEFAULT_TOTAL_BUDGET_MS = 25_000;
 
 // Cap on a single attempt so a slow first call still leaves room for a retry.
-const PER_ATTEMPT_CAP_MS = 15_000;
+const DEFAULT_PER_ATTEMPT_CAP_MS = 15_000;
 
 // Delay before the (at most one) retry. "Exponential backoff" per the plan is
 // aspirational with only two attempts — this is the single backoff step.
@@ -63,6 +64,7 @@ const ERROR_CODES = Object.freeze({
   NETWORK_ERROR:     'NETWORK_ERROR',
   HTTP_5XX:          'HTTP_5XX',
   HTTP_ERROR:        'HTTP_ERROR',
+  PROVIDER_ERROR:    'PROVIDER_ERROR',
   RATE_LIMIT:        'RATE_LIMIT',
   INPUT_TOO_LARGE:   'INPUT_TOO_LARGE',
   SAFETY_BLOCKED:    'SAFETY_BLOCKED',
@@ -111,9 +113,11 @@ export async function runAgent(key, systemPrompt, source, metadata, env) {
     throw new TypeError('runAgent: source must be a non-empty string');
   }
   const provider = resolveModelProvider(env);
+  const totalBudgetMs = getTotalBudgetMs(env, provider);
+  const perAttemptCapMs = getPerAttemptCapMs(env, provider, totalBudgetMs);
 
   const userMessage = buildUserMessage(metadata, source);
-  const deadline = Date.now() + TOTAL_BUDGET_MS;
+  const deadline = Date.now() + totalBudgetMs;
   let lastError = null;
 
   // At most two attempts. A single retry is enough for transient blips
@@ -123,10 +127,10 @@ export async function runAgent(key, systemPrompt, source, metadata, env) {
     if (remaining <= 0) {
       return failure(key, lastError || {
         code: ERROR_CODES.TIMEOUT,
-        message: `Agent "${key}" exceeded ${TOTAL_BUDGET_MS}ms total budget`,
+        message: `Agent "${key}" exceeded ${totalBudgetMs}ms total budget`,
       }, attempt - 1);
     }
-    const attemptTimeout = Math.min(remaining, PER_ATTEMPT_CAP_MS);
+    const attemptTimeout = Math.min(remaining, perAttemptCapMs);
 
     const outcome = await callProvider(provider, {
       systemPrompt,
@@ -215,16 +219,20 @@ function getModelProvider(env) {
   if (providerName === 'gemini') return createGeminiProvider();
   if (providerName === 'claude') return createClaudeProvider();
   if (providerName === 'codex') return createCodexProvider();
+  if (providerName === 'codex-cli') return createCodexCliProvider();
   throw new Error(`runAgent: unsupported AI_PROVIDER "${providerName}"`);
 }
 
 export function resolveModelProvider(env) {
-  assertModelEnv(env);
-  return getModelProvider(env);
+  const provider = getModelProvider(env);
+  assertModelEnv(env, provider);
+  return provider;
 }
 
-function assertModelEnv(env) {
-  if (!env || typeof env.AI_API_KEY !== 'string' || env.AI_API_KEY.length === 0) {
+function assertModelEnv(env, provider = null) {
+  const activeProvider = provider || getModelProvider(env);
+  if (activeProvider.requiresApiKey !== false &&
+      (!env || typeof env.AI_API_KEY !== 'string' || env.AI_API_KEY.length === 0)) {
     throw new Error('runAgent: env.AI_API_KEY is missing');
   }
   if (!env || typeof env.AI_MODEL !== 'string' || env.AI_MODEL.length === 0) {
@@ -232,7 +240,36 @@ function assertModelEnv(env) {
   }
 }
 
+function getTotalBudgetMs(env, provider) {
+  const configured = parsePositiveInt(env?.AI_TOTAL_BUDGET_MS);
+  if (configured) return configured;
+  if (Number.isFinite(provider?.defaultTotalBudgetMs) && provider.defaultTotalBudgetMs > 0) {
+    return provider.defaultTotalBudgetMs;
+  }
+  return DEFAULT_TOTAL_BUDGET_MS;
+}
+
+function getPerAttemptCapMs(env, provider, totalBudgetMs) {
+  const configured = parsePositiveInt(env?.AI_PER_ATTEMPT_TIMEOUT_MS);
+  if (configured) return Math.min(configured, totalBudgetMs);
+  if (Number.isFinite(provider?.defaultPerAttemptTimeoutMs) && provider.defaultPerAttemptTimeoutMs > 0) {
+    return Math.min(provider.defaultPerAttemptTimeoutMs, totalBudgetMs);
+  }
+  return Math.min(DEFAULT_PER_ATTEMPT_CAP_MS, totalBudgetMs);
+}
+
+function parsePositiveInt(value) {
+  if (value == null || value === '') return null;
+  const parsed = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return null;
+  return parsed;
+}
+
 async function callProvider(provider, { systemPrompt, userMessage, requestConfig, timeoutMs, env }) {
+  if (typeof provider.execute === 'function') {
+    return provider.execute({ systemPrompt, userMessage, requestConfig, timeoutMs, env });
+  }
+
   const { url, init } = provider.buildRequest({ systemPrompt, userMessage, requestConfig, env });
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -333,16 +370,19 @@ export const __internal = Object.freeze({
   validateAgentOutput,
   ERROR_CODES,
   RETRYABLE_CODES,
-  TOTAL_BUDGET_MS,
-  PER_ATTEMPT_CAP_MS,
+  DEFAULT_TOTAL_BUDGET_MS,
+  DEFAULT_PER_ATTEMPT_CAP_MS,
   RETRY_BACKOFF_MS,
   getModelProvider,
   resolveModelProvider,
   assertModelEnv,
+  getTotalBudgetMs,
+  getPerAttemptCapMs,
   callProvider,
   GEMINI_BASE_URL,
   REQUEST_CONFIG,
   CLAUDE_API_URL,
   CLAUDE_API_VERSION,
   CODEX_API_URL,
+  CODEX_CLI_BINARY,
 });

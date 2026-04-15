@@ -18,58 +18,6 @@ OpenSentry orchestrates specialized AI security agents that analyze a smart cont
 
 **Supported chains:** Ethereum, Base, Arbitrum, Optimism, Polygon
 
-**Stack:** Cloudflare Pages (static frontend) + Cloudflare Pages Functions (serverless backend) + Google Gemini API + Etherscan V2 API (contract source fetching)
-
-**Note:** Current POC uses free tier, next version will use a more robust model for better results.
-
----
-
-## Repository Structure
-
-```
-OpenSentry/
-├── website/                         # Static frontend (served by Cloudflare Pages)
-│   ├── index.html                   # Landing page
-│   ├── audit-tool.html              # Security analysis tool UI
-│   └── logo.png                     # Brand assets
-├── functions/                       # Cloudflare Pages Functions (serverless backend)
-│   └── api/
-│       ├── analyze.js               # POST /api/analyze — main orchestrator
-│       ├── _middleware.js            # CORS, rate limiting, request validation
-│       └── lib/
-│           ├── fetch-source.js      # Fetch verified source from Etherscan V2
-│           ├── agent-runner.js      # Call the AI model per agent with retry + timeout
-│           ├── prompt-wrapper.js    # Anti-injection preamble + agent prompt
-│           ├── merge-results.js     # Dedup, quality gate, sort, assign IDs
-│           ├── skill-loader.js      # (see embedded-skills.js below)
-│           └── embedded-skills.js   # AUTO-GENERATED — `npm run build`
-├── skill/                           # Agent prompts and orchestration definitions
-│   ├── SKILL.md                     # Base orchestrator prompt
-│   ├── agents/                      # 8 agent markdown files
-│   │   ├── access-control.md
-│   │   ├── token-mechanics.md
-│   │   ├── economic-fees.md
-│   │   ├── oracle-dependencies.md
-│   │   ├── mev-safety.md
-│   │   ├── code-quality.md
-│   │   ├── transparency.md
-│   │   └── governance.md
-│   └── output/
-│       └── report-template.md       # Report structure definition
-├── scripts/
-│   └── embed-skills.js              # Build script: skill/*.md → embedded-skills.js
-├── tests/                           # Unit + integration tests (node:test)
-│   ├── fetch-source.test.mjs
-│   ├── agent-runner.test.mjs
-│   ├── merge-results.test.mjs
-│   ├── analyze.test.mjs
-│   └── middleware.test.mjs
-├── .dev.vars.example                # Template for local env vars
-├── wrangler.toml                    # Cloudflare Pages config
-├── package.json
-└── PLAN.md                          # Full implementation plan
-```
-
 ---
 
 ## Local Development Setup
@@ -92,13 +40,23 @@ npm install
 cp .dev.vars.example .dev.vars
 ```
 
+OpenSentry does not ship with shared provider credentials.
+
+If you want to run the project, you must use your own model-provider setup:
+
+- For API-backed providers, set your own `AI_API_KEY`.
+- For `codex-cli`, use your own local Codex CLI installation and authenticated session, without having to set `AI_API_KEY`.
+
+
 Edit `.dev.vars` and fill in your keys:
 
 | Variable | Where to get it |
 |----------|----------------|
-| `AI_PROVIDER` | Model provider. Supported: `gemini`, `claude`, or `codex`. Defaults to `gemini` if omitted |
+| `AI_PROVIDER` | Model provider. Supported: `gemini`, `claude`, `codex`, or `codex-cli`. Defaults to `gemini` if omitted |
 | `AI_API_KEY` | API key for the configured model provider |
 | `AI_MODEL` | Model ID to use. Change this in env vars instead of code |
+| `AI_TOTAL_BUDGET_MS` | Optional per-agent total timeout override in milliseconds. Useful for slower local providers like `codex-cli` |
+| `AI_PER_ATTEMPT_TIMEOUT_MS` | Optional per-attempt timeout override in milliseconds |
 | `AI_AGENT_CONCURRENCY` | Optional model-call concurrency. Defaults to `1` for free-tier friendliness |
 | `ANALYZE_IP_COOLDOWN_MS` | Optional per-IP cooldown in milliseconds. Set `0` to disable |
 | `ANALYZE_DAILY_CAP` | Optional global daily cap. Set `0` to disable |
@@ -150,6 +108,22 @@ AI_PROVIDER=codex AI_MODEL=gpt-5.3-codex AI_API_KEY=your_openai_key \
 npm run cli -- analyze --file ./contracts/Vault.sol --trace-dir ./.opensentry-trace
 ```
 
+Example local Codex CLI setup with a personal Codex/ChatGPT login session:
+
+```bash
+AI_PROVIDER=codex-cli AI_MODEL=gpt-5.3-codex \
+npm run cli -- analyze --file ./contracts/Vault.sol --trace-dir ./.opensentry-trace
+```
+
+`codex-cli` uses the locally installed `codex` binary and your existing Codex CLI login session instead of direct OpenAI API billing.
+
+By default, `codex-cli` gets a much larger local timeout budget than the API-backed providers. You can override it explicitly, for example:
+
+```bash
+AI_PROVIDER=codex-cli AI_MODEL=gpt-5.3-codex AI_TOTAL_BUDGET_MS=600000 AI_PER_ATTEMPT_TIMEOUT_MS=600000 \
+npm run cli -- analyze --file ./contracts/Vault.sol --trace-dir ./.opensentry-trace
+```
+
 ---
 
 ## Architecture
@@ -187,7 +161,7 @@ Browser                    Cloudflare Pages Functions              External
                         └────┬─────┘  └────┬─────┘  └────┬─────┘  Promise.allSettled
                              │             │             │
                              ▼             ▼             ▼
-                          Gemini API (JSON mode)
+                          AI API (JSON mode)
                               │
                               ▼
                      ┌──────────────────┐
@@ -208,63 +182,6 @@ Browser                    Cloudflare Pages Functions              External
 4. **Prompt wrapper** — prepends anti-injection preamble to each agent's markdown prompt
 5. **Agent runner** — calls the configured model with 25s budget, 1 retry for transient errors, validates output schema
 6. **Merger** — classifies results, quality-gates findings (citation check, contradiction filter, finding cap), deduplicates by root cause (location + Jaccard check-name similarity), resolves severity conflicts, sorts CRITICAL > WARNING > INFO, assigns OS-001/002/... IDs
-
----
-
-## Deployment
-
-### Cloudflare Pages
-
-```bash
-npm run build          # regenerate embedded-skills.js
-npm run deploy         # direct-upload the `website/` bundle to the `opensentry` Pages project
-```
-
-Recommended project settings in Cloudflare:
-
-- Framework preset: `None`
-- Build command: `npm run build`
-- Build output directory: `website`
-- Root directory: repository root
-
-Set the following environment variables in the Cloudflare Pages dashboard (`Workers & Pages -> <project> -> Settings -> Variables and Secrets`):
-
-- `AI_API_KEY`
-- `AI_MODEL`
-- `AI_AGENT_CONCURRENCY` (optional)
-- `ANALYZE_IP_COOLDOWN_MS` (optional)
-- `ANALYZE_DAILY_CAP` (optional)
-- `ETHERSCAN_API_KEY`
-
-Direct upload via Wrangler:
-
-```bash
-npm install
-npm run build
-npm run deploy
-```
-
-Git-based deployment via Cloudflare Pages:
-
-1. Connect the GitHub repository in Cloudflare Pages.
-2. Set the production branch to the branch you want to deploy from.
-3. Use build command `npm run build`.
-4. Use build output directory `website`.
-5. Add the variables/secrets listed above.
-6. Deploy and verify that `/api/analyze` responds from Pages Functions.
-
----
-
-## Security Notes
-
-- API keys are only in environment variables (`.dev.vars` locally, Cloudflare secrets in production)
-- Every agent call is wrapped with an anti-injection preamble that treats contract source as untrusted data
-- All user-supplied strings are HTML-escaped before rendering in the frontend
-- CORS is restricted to `opensentry.tech` and `localhost`
-- Error responses never leak API keys or stack traces
-- `embedded-skills.js` is gitignored (contains prompt IP generated from `skill/agents/`)
-- Configure provider-side limits in your model provider dashboard and use the optional middleware env vars for app-side abuse protection
-
 
 ---
 

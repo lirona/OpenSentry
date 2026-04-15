@@ -20,3 +20,4 @@ Thumbs.db
 
 # Files for testing
 tests/contracts
+tests/output

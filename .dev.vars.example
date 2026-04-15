@@ -3,10 +3,13 @@
 # under Settings -> Environment variables (marked as Encrypted / Secret).
 
 # --- AI provider ---
-# Supported values: "gemini" (default), "claude", or "codex".
+# Supported values: "gemini" (default), "claude", "codex", or "codex-cli".
 AI_PROVIDER="gemini"
 AI_API_KEY=""
 AI_MODEL=""
+# Optional local/runtime overrides for slower providers like codex-cli.
+AI_TOTAL_BUDGET_MS=""
+AI_PER_ATTEMPT_TIMEOUT_MS=""
 # --- API abuse protection ---
 # Optional model-call concurrency. Defaults to 1 to avoid free-tier burst limits.
 AI_AGENT_CONCURRENCY="1"
