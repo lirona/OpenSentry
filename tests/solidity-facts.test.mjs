@@ -122,6 +122,26 @@ test('extracts fee caps from conjunction conditions', () => {
   assert.equal(feeControl.setters[0].capValue, 1000);
 });
 
+test('extracts exclusive fee caps from require conditions', () => {
+  const facts = compileFacts(`
+    pragma solidity 0.8.20;
+    contract Vault {
+      uint256 public feeBps;
+      uint256 public constant MAX_FEE_BPS = 1_000;
+
+      function setFee(uint256 value) external {
+        require(value < MAX_FEE_BPS, "cap");
+        feeBps = value;
+      }
+    }
+  `);
+
+  const feeControl = facts.feeControls.find((entry) => entry.variable === 'feeBps');
+  assert.ok(feeControl);
+  assert.equal(feeControl.setters[0].capRaw, 'MAX_FEE_BPS');
+  assert.equal(feeControl.setters[0].capValue, 999);
+});
+
 test('extracts fee caps from terminating if guards', () => {
   const facts = compileFacts(`
     pragma solidity 0.8.20;
@@ -142,6 +162,28 @@ test('extracts fee caps from terminating if guards', () => {
   assert.ok(feeControl);
   assert.equal(feeControl.setters[0].capRaw, 'MAX_FEE_BPS');
   assert.equal(feeControl.setters[0].capValue, 1000);
+});
+
+test('extracts exclusive fee caps from terminating if guards', () => {
+  const facts = compileFacts(`
+    pragma solidity 0.8.20;
+    contract Vault {
+      uint256 public feeBps;
+      uint256 public constant MAX_FEE_BPS = 1_000;
+
+      function setFee(uint256 value) external {
+        if (value >= MAX_FEE_BPS) {
+          revert();
+        }
+        feeBps = value;
+      }
+    }
+  `);
+
+  const feeControl = facts.feeControls.find((entry) => entry.variable === 'feeBps');
+  assert.ok(feeControl);
+  assert.equal(feeControl.setters[0].capRaw, 'MAX_FEE_BPS');
+  assert.equal(feeControl.setters[0].capValue, 999);
 });
 
 test('does not infer fee caps from non-terminating if branches', () => {
