@@ -261,12 +261,22 @@ function dedupeFindings(findings) {
   const seen = new Set();
   const deduped = [];
   for (const finding of findings) {
-    const key = `${finding.ruleId || ''}|${finding.location || ''}|${finding.check || ''}`;
+    const key = dedupeFindingKey(finding);
     if (seen.has(key)) continue;
     seen.add(key);
     deduped.push(finding);
   }
   return deduped;
+}
+
+function dedupeFindingKey(finding) {
+  return [
+    finding?.ruleId || '',
+    finding?.location || '',
+    finding?.check || '',
+  ]
+    .map((part) => `${part.length}:${part}`)
+    .join('|');
 }
 
 function compareFindings(a, b) {
@@ -279,4 +289,5 @@ export const __internal = Object.freeze({
   classifyFeeSetter,
   formatLocation,
   describeFunctionList,
+  dedupeFindingKey,
 });

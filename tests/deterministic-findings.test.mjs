@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { compileSourceWithBundledSolc } from '../functions/api/lib/solc-compile.js';
 import { extractSolidityFacts } from '../functions/api/lib/solidity-facts.js';
-import { deriveDeterministicFindings } from '../functions/api/lib/deterministic-findings.js';
+import { deriveDeterministicFindings, __internal } from '../functions/api/lib/deterministic-findings.js';
 
 function deriveFindings(source, compiler = 'pragma:0.8.20', fileName = 'Fixture.sol') {
   const files = [{ name: fileName, content: source }];
@@ -193,4 +193,19 @@ test('flags privileged upgrade paths without a visible timelock', () => {
   const finding = findings.find((entry) => entry.ruleId === 'upgrade-without-timelock');
   assert.ok(finding);
   assert.equal(finding.severity, 'WARNING');
+});
+
+test('dedupe finding keys are safe when fields contain delimiters', () => {
+  const first = __internal.dedupeFindingKey({
+    ruleId: 'a|b',
+    location: 'c',
+    check: 'd',
+  });
+  const second = __internal.dedupeFindingKey({
+    ruleId: 'a',
+    location: 'b|c',
+    check: 'd',
+  });
+
+  assert.notEqual(first, second);
 });
