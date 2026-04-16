@@ -89,7 +89,7 @@ function buildOutputSchema() {
   };
 }
 
-async function runCodexCli({ spawn, cwd, timeoutMs, schemaPath, model, prompt }) {
+async function runCodexCli({ spawn, cwd, timeoutMs, schemaPath, model, prompt, killGraceMs = 2_000 }) {
   return new Promise((resolve) => {
     const child = spawn(
       CODEX_CLI_BINARY,
@@ -118,18 +118,18 @@ async function runCodexCli({ spawn, cwd, timeoutMs, schemaPath, model, prompt })
     let stderr = '';
     let resolved = false;
     let finalText = '';
-    let sigkillTimer = null;
+    let killTimer = null;
 
     const timer = setTimeout(() => {
       child.kill('SIGTERM');
-      sigkillTimer = setTimeout(() => {
+      killTimer = setTimeout(() => {
         try {
           child.kill('SIGKILL');
         } catch (_) {
           // Ignore cases where the child has already exited.
         }
-      }, 2_000);
-      sigkillTimer.unref?.();
+      }, killGraceMs);
+      killTimer.unref?.();
       finish(errorResult('TIMEOUT', `Model call exceeded ${timeoutMs}ms`));
     }, timeoutMs);
 
@@ -148,13 +148,13 @@ async function runCodexCli({ spawn, cwd, timeoutMs, schemaPath, model, prompt })
 
     child.on('error', (error) => {
       clearTimeout(timer);
-      if (sigkillTimer) clearTimeout(sigkillTimer);
+      if (killTimer) clearTimeout(killTimer);
       finish(errorResult('PROVIDER_ERROR', `Codex CLI execution failed: ${error.message}`));
     });
 
     child.on('close', (code, signal) => {
       clearTimeout(timer);
-      if (sigkillTimer) clearTimeout(sigkillTimer);
+      if (killTimer) clearTimeout(killTimer);
 
       if (resolved) return;
 

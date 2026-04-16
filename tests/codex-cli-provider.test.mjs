@@ -63,7 +63,43 @@ test('runCodexCli captures the final item.completed payload from a live stdout s
   assert.deepEqual(result, { ok: true, text: '{"ok":true}' });
 });
 
-test('runCodexCli escalates to SIGKILL when the child ignores SIGTERM', async () => {
+test('runCodexCli times out, sends SIGTERM, and does not escalate when the child exits during the grace period', async () => {
+  const signals = [];
+  const child = new EventEmitter();
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.stdout.setEncoding = () => {};
+  child.stderr.setEncoding = () => {};
+  child.stdin = { end() {} };
+  child.kill = (signal) => {
+    signals.push(signal);
+    if (signal === 'SIGTERM') {
+      queueMicrotask(() => {
+        child.emit('close', null, 'SIGTERM');
+      });
+    }
+  };
+
+  const spawn = () => child;
+
+  const result = await __internal.runCodexCli({
+    spawn,
+    cwd: process.cwd(),
+    timeoutMs: 5,
+    killGraceMs: 5,
+    schemaPath: '/tmp/schema.json',
+    model: 'gpt-5.3-codex',
+    prompt: 'Return JSON',
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 15));
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'TIMEOUT');
+  assert.deepEqual(signals, ['SIGTERM']);
+});
+
+test('runCodexCli escalates to SIGKILL when the child ignores SIGTERM after timeout', async () => {
   const signals = [];
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
@@ -81,12 +117,13 @@ test('runCodexCli escalates to SIGKILL when the child ignores SIGTERM', async ()
     spawn,
     cwd: process.cwd(),
     timeoutMs: 5,
+    killGraceMs: 5,
     schemaPath: '/tmp/schema.json',
     model: 'gpt-5.3-codex',
     prompt: 'Return JSON',
   });
 
-  await new Promise((resolve) => setTimeout(resolve, 2_050));
+  await new Promise((resolve) => setTimeout(resolve, 15));
 
   assert.equal(result.ok, false);
   assert.equal(result.error.code, 'TIMEOUT');
