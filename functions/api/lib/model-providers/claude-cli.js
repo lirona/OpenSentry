@@ -30,7 +30,7 @@ export function createClaudeCliProvider() {
       const systemPromptPath = path.join(tempDir, 'system-prompt.txt');
 
       try {
-        await writeFile(systemPromptPath, `${systemPrompt}\n`, 'utf8');
+        await writeFile(systemPromptPath, `${buildClaudeCliSystemPrompt(systemPrompt)}\n`, 'utf8');
 
         const result = await runClaudeCli({
           spawn,
@@ -56,6 +56,16 @@ export function createClaudeCliProvider() {
       }
     },
   });
+}
+
+function buildClaudeCliSystemPrompt(systemPrompt) {
+  return (
+    'You are acting as a deterministic security-analysis engine. ' +
+    'Do not request tools, do not ask to inspect the filesystem, and do not browse the web. ' +
+    'Use only the instructions and source code included below. ' +
+    'Return exactly one JSON object that matches the provided schema.\n\n' +
+    `${systemPrompt}`
+  );
 }
 
 function buildOutputSchema() {
@@ -261,6 +271,7 @@ function errorResult(code, message, extra = {}) {
 
 export { CLAUDE_CLI_BINARY };
 export const __internal = Object.freeze({
+  buildClaudeCliSystemPrompt,
   extractClaudeCliText,
   runClaudeCli,
 });

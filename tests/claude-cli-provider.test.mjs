@@ -38,6 +38,17 @@ test('extractClaudeCliText reads structured_output from Claude Code JSON output'
   assert.equal(__internal.extractClaudeCliText(stdout), JSON.stringify(validAgentOutput()));
 });
 
+test('buildClaudeCliSystemPrompt wraps the model instructions with deterministic local-run guards', () => {
+  const systemPrompt = 'AGENT PREAMBLE\n\nReview the supplied source.';
+  const wrapped = __internal.buildClaudeCliSystemPrompt(systemPrompt);
+
+  assert.match(wrapped, /deterministic security-analysis engine/i);
+  assert.match(wrapped, /do not request tools/i);
+  assert.match(wrapped, /do not browse the web/i);
+  assert.match(wrapped, /exactly one JSON object/i);
+  assert.match(wrapped, /AGENT PREAMBLE/);
+});
+
 test('extractClaudeCliText falls back to result when it contains valid agent JSON', () => {
   const stdout = JSON.stringify({
     session_id: 'session_123',
