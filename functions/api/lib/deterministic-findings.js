@@ -145,7 +145,7 @@ function derivePrivilegedSupplyFindings(facts) {
   const findings = [];
 
   const privilegedMints = (facts.tokenFeatures?.mintFunctions || []).filter((entry) =>
-    privilegedFunctions.has(functionKey(entry.contract, entry.name)),
+    privilegedFunctions.has(functionKey(entry.contract, entry.function)),
   );
   for (const [contract, group] of Object.entries(groupBy(privilegedMints, (entry) => entry.contract))) {
     findings.push(finding({
@@ -162,7 +162,7 @@ function derivePrivilegedSupplyFindings(facts) {
   }
 
   const privilegedBurns = (facts.tokenFeatures?.burnFunctions || []).filter((entry) => {
-    const privileged = privilegedFunctions.get(functionKey(entry.contract, entry.name));
+    const privileged = privilegedFunctions.get(functionKey(entry.contract, entry.function));
     return privileged && privileged.parameters.some((name) => USER_BALANCE_PARAM_RE.test(name));
   });
   for (const [contract, group] of Object.entries(groupBy(privilegedBurns, (entry) => entry.contract))) {

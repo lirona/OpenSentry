@@ -323,7 +323,7 @@ function analyzeFunction({
   if (/^(transfer|transferFrom)$/i.test(name)) {
     tokenFeatures.transferFunctions.push({
       contract: contractName,
-      name,
+      function: name,
       file: fileName,
       line: location.line,
       modifiers,
@@ -386,27 +386,67 @@ function collectStateWrites(body, stateVariables) {
 
 function inferFeeCap(body, parameters, constantValues) {
   let best = null;
+  const captureBest = (candidate) => {
+    if (!candidate) return;
+    if (!best || (candidate.value !== null && (best.value === null || candidate.value < best.value))) {
+      best = candidate;
+    }
+  };
 
   walkAst(body, (node) => {
     if (node.nodeType !== 'FunctionCall' || referencedName(node.expression) !== 'require') return;
     const condition = node.arguments?.[0];
-    const candidate = capFromCondition(condition, parameters, constantValues);
-    if (!candidate) return;
-    if (!best || (candidate.value !== null && (best.value === null || candidate.value < best.value))) {
-      best = candidate;
-    }
+    captureBest(capFromCondition(condition, parameters, constantValues));
   });
 
   walkAst(body, (node) => {
     if (node.nodeType !== 'IfStatement') return;
-    const candidate = capFromCondition(node.condition, parameters, constantValues, true);
-    if (!candidate) return;
-    if (!best || (candidate.value !== null && (best.value === null || candidate.value < best.value))) {
-      best = candidate;
-    }
+    captureBest(capFromIfStatement(node, parameters, constantValues));
   });
 
   return best;
+}
+
+function capFromIfStatement(node, parameters, constantValues) {
+  const trueTerminates = statementAlwaysTerminates(node?.trueBody);
+  const falseTerminates = statementAlwaysTerminates(node?.falseBody);
+
+  if (trueTerminates === falseTerminates) return null;
+  if (trueTerminates) return capFromCondition(node.condition, parameters, constantValues, true);
+  return capFromCondition(node.condition, parameters, constantValues);
+}
+
+function statementAlwaysTerminates(node) {
+  if (!node || typeof node !== 'object') return false;
+
+  if (node.nodeType === 'Block' || node.nodeType === 'UncheckedBlock') {
+    const statements = node.statements || [];
+    if (statements.length === 0) return false;
+    return statementAlwaysTerminates(statements[statements.length - 1]);
+  }
+  if (node.nodeType === 'Return' || node.nodeType === 'RevertStatement' || node.nodeType === 'Throw') {
+    return true;
+  }
+  if (node.nodeType === 'IfStatement') {
+    return statementAlwaysTerminates(node.trueBody) && statementAlwaysTerminates(node.falseBody);
+  }
+  if (node.nodeType === 'ExpressionStatement') {
+    return isTerminatingExpression(node.expression);
+  }
+
+  return false;
+}
+
+function isTerminatingExpression(node) {
+  if (!node || typeof node !== 'object' || node.nodeType !== 'FunctionCall') return false;
+
+  const callee = referencedName(node.expression);
+  if (callee === 'revert') return true;
+  if ((callee === 'require' || callee === 'assert') && booleanLiteralValue(node.arguments?.[0]) === false) {
+    return true;
+  }
+
+  return false;
 }
 
 function capFromCondition(condition, parameters, constantValues, invert = false) {
@@ -573,10 +613,22 @@ function inferGuardKinds(modifiers, body) {
 
   for (const modifier of modifiers) capture(modifier);
   walkAst(body, (node) => {
-    capture(node.name || node.memberName || modifierName(node) || null);
+    if (node.nodeType === 'FunctionCall' && referencedName(node.expression) === 'require') {
+      captureNamesInCondition(node.arguments?.[0], capture);
+    }
+    if (node.nodeType === 'IfStatement') {
+      captureNamesInCondition(node.condition, capture);
+    }
   });
 
   return [...kinds];
+}
+
+function captureNamesInCondition(node, capture) {
+  if (!node || typeof node !== 'object') return;
+  walkAst(node, (child) => {
+    capture(child.name || child.memberName || null);
+  });
 }
 
 function referencedName(node) {
@@ -612,6 +664,14 @@ function resolveNumericValue(node, constantValues) {
   const name = referencedName(node);
   if (!name) return null;
   return constantValues.get(name) ?? null;
+}
+
+function booleanLiteralValue(node) {
+  if (!node || typeof node !== 'object') return null;
+  if (node.nodeType !== 'Literal' || node.kind !== 'bool' || typeof node.value !== 'string') return null;
+  if (node.value === 'true') return true;
+  if (node.value === 'false') return false;
+  return null;
 }
 
 function describeGuardType(hasModifier, hasInlineCheck) {
@@ -684,7 +744,7 @@ function tokenFeatureEntry(contract, variable, file) {
 }
 
 function functionFeatureEntry(contract, name, file, line) {
-  return { contract, name, file, line };
+  return { contract, function: name, file, line };
 }
 
 function pushTokenFeatures(target, source) {

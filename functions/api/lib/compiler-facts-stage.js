@@ -3,13 +3,21 @@ import { extractSolidityFacts } from './solidity-facts.js';
 import { deriveDeterministicFindings } from './deterministic-findings.js';
 
 export function runCompilerFactsStage(sourceResult) {
+  return runCompilerFactsStageWithDependencies(sourceResult);
+}
+
+function runCompilerFactsStageWithDependencies(sourceResult, dependencies = {}) {
   if (!sourceResult || typeof sourceResult !== 'object') {
     throw new TypeError('runCompilerFactsStage: sourceResult must be an object');
   }
 
+  const compileSource = dependencies.compileSource || compileSourceWithBundledSolc;
+  const extractFacts = dependencies.extractFacts || extractSolidityFacts;
+  const deriveFindings = dependencies.deriveFindings || deriveDeterministicFindings;
+
   let compiled;
   try {
-    compiled = compileSourceWithBundledSolc(sourceResult);
+    compiled = compileSource(sourceResult);
   } catch (error) {
     return {
       factsStage: {
@@ -60,7 +68,7 @@ export function runCompilerFactsStage(sourceResult) {
   }
 
   try {
-    const facts = extractSolidityFacts({
+    const facts = extractFacts({
       compilerOutput: filterCompilerOutputToFiles(compiled.compilerOutput, partition.analyzableFiles),
       files: partition.analyzableFiles,
     });
@@ -75,7 +83,7 @@ export function runCompilerFactsStage(sourceResult) {
         missingAstFiles: partition.missingAstFiles,
         facts,
       },
-      deterministicFindings: deriveDeterministicFindings(facts),
+      deterministicFindings: deriveFindings(facts),
     };
   } catch (error) {
     return {
@@ -123,6 +131,7 @@ function filterCompilerOutputToFiles(compilerOutput, files) {
 }
 
 export const __internal = Object.freeze({
+  runCompilerFactsStageWithDependencies,
   partitionRequestedFilesByAst,
   filterCompilerOutputToFiles,
 });

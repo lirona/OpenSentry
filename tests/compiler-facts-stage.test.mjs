@@ -66,3 +66,41 @@ test('compiler facts stage reports no analyzable files when requested file names
   assert.equal(result.factsStage.status, 'no_analyzable_files');
   assert.equal(result.factsStage.reason, 'missing_requested_asts');
 });
+
+test('compiler facts stage reports extraction exceptions', () => {
+  const result = __internal.runCompilerFactsStageWithDependencies(
+    {
+      compiler: 'pragma:0.8.20',
+      files: [
+        {
+          name: 'Vault.sol',
+          content: 'pragma solidity 0.8.20; contract Vault {}',
+        },
+      ],
+    },
+    {
+      compileSource() {
+        return {
+          status: 'ok',
+          requestedCompilerHint: 'pragma:0.8.20',
+          selectedVersion: '0.8.20',
+          diagnostics: [],
+          reason: null,
+          compilerOutput: {
+            sources: {
+              'Vault.sol': { ast: { nodeType: 'SourceUnit' } },
+            },
+          },
+        };
+      },
+      extractFacts() {
+        throw new Error('boom');
+      },
+    },
+  );
+
+  assert.equal(result.factsStage.status, 'error');
+  assert.equal(result.factsStage.reason, 'facts_extraction_exception');
+  assert.match(result.factsStage.errorMessage, /boom/);
+  assert.deepEqual(result.deterministicFindings, []);
+});
