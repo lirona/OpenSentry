@@ -118,9 +118,18 @@ async function runCodexCli({ spawn, cwd, timeoutMs, schemaPath, model, prompt })
     let stderr = '';
     let resolved = false;
     let finalText = '';
+    let sigkillTimer = null;
 
     const timer = setTimeout(() => {
       child.kill('SIGTERM');
+      sigkillTimer = setTimeout(() => {
+        try {
+          child.kill('SIGKILL');
+        } catch (_) {
+          // Ignore cases where the child has already exited.
+        }
+      }, 2_000);
+      sigkillTimer.unref?.();
       finish(errorResult('TIMEOUT', `Model call exceeded ${timeoutMs}ms`));
     }, timeoutMs);
 
@@ -139,11 +148,13 @@ async function runCodexCli({ spawn, cwd, timeoutMs, schemaPath, model, prompt })
 
     child.on('error', (error) => {
       clearTimeout(timer);
+      if (sigkillTimer) clearTimeout(sigkillTimer);
       finish(errorResult('PROVIDER_ERROR', `Codex CLI execution failed: ${error.message}`));
     });
 
     child.on('close', (code, signal) => {
       clearTimeout(timer);
+      if (sigkillTimer) clearTimeout(sigkillTimer);
 
       if (resolved) return;
 

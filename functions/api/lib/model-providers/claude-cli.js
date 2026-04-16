@@ -120,9 +120,18 @@ async function runClaudeCli({ spawn, cwd, timeoutMs, jsonSchema, model, systemPr
     let stdout = '';
     let stderr = '';
     let resolved = false;
+    let sigkillTimer = null;
 
     const timer = setTimeout(() => {
       child.kill('SIGTERM');
+      sigkillTimer = setTimeout(() => {
+        try {
+          child.kill('SIGKILL');
+        } catch (_) {
+          // Ignore cases where the child has already exited.
+        }
+      }, 2_000);
+      sigkillTimer.unref?.();
       finish(errorResult('TIMEOUT', `Model call exceeded ${timeoutMs}ms`));
     }, timeoutMs);
 
@@ -141,11 +150,13 @@ async function runClaudeCli({ spawn, cwd, timeoutMs, jsonSchema, model, systemPr
 
     child.on('error', (error) => {
       clearTimeout(timer);
+      if (sigkillTimer) clearTimeout(sigkillTimer);
       finish(errorResult('PROVIDER_ERROR', `Claude Code execution failed: ${error.message}`));
     });
 
     child.on('close', (code, signal) => {
       clearTimeout(timer);
+      if (sigkillTimer) clearTimeout(sigkillTimer);
 
       if (resolved) return;
 

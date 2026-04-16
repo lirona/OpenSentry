@@ -214,10 +214,10 @@ test('runClaudeCli reports subprocess spawn failures', async () => {
 });
 
 test('runClaudeCli times out when Claude Code exceeds the timeout budget', async () => {
-  let killed = false;
+  const signals = [];
   const child = makeChildProcess();
-  child.kill = () => {
-    killed = true;
+  child.kill = (signal) => {
+    signals.push(signal);
   };
 
   const spawn = () => child;
@@ -234,5 +234,31 @@ test('runClaudeCli times out when Claude Code exceeds the timeout budget', async
 
   assert.equal(result.ok, false);
   assert.equal(result.error.code, 'TIMEOUT');
-  assert.equal(killed, true);
+  assert.deepEqual(signals, ['SIGTERM']);
+});
+
+test('runClaudeCli escalates to SIGKILL when the child ignores SIGTERM', async () => {
+  const signals = [];
+  const child = makeChildProcess();
+  child.kill = (signal) => {
+    signals.push(signal);
+  };
+
+  const spawn = () => child;
+
+  const result = await __internal.runClaudeCli({
+    spawn,
+    cwd: process.cwd(),
+    timeoutMs: 5,
+    jsonSchema: '{"type":"object"}',
+    model: 'sonnet',
+    systemPromptPath: '/tmp/system-prompt.txt',
+    prompt: 'Analyze this contract',
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 2_050));
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'TIMEOUT');
+  assert.deepEqual(signals, ['SIGTERM', 'SIGKILL']);
 });
