@@ -150,14 +150,14 @@ function derivePrivilegedSupplyFindings(facts) {
   for (const [contract, group] of Object.entries(groupBy(privilegedMints, (entry) => entry.contract))) {
     findings.push(finding({
       ruleId: 'privileged-mint',
-      severity: 'CRITICAL',
+      severity: 'INFO',
       location: formatLocation(group[0].file, group[0].line),
       check: 'Privileged mint path',
-      summary: `${contract} exposes a privileged mint function.`,
+      summary: `${contract} exposes a privileged mint function that can increase supply.`,
       detail:
-        `The extracted facts identify ${describeFunctionList(group)} as mint functions that also require privileged access in ${contract}.`,
+        `The extracted facts identify ${describeFunctionList(group)} as mint functions that also require privileged access in ${contract}. Verify whether privileged minting is expected for this token design.`,
       userImpact:
-        'A privileged actor can increase supply at discretion, which can dilute holders or redirect value.',
+        'A privileged actor can increase supply, which may be expected for some token designs but can also dilute holders or redirect value if not intended.',
     }));
   }
 

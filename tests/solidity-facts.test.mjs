@@ -67,6 +67,44 @@ test('extracts mutable parameters and fee controls', () => {
   assert.equal(feeControl.setters[0].capValue, 1000);
 });
 
+test('extracts arbitrary fee scales from setter expressions', () => {
+  const facts = compileFacts(`
+    pragma solidity 0.8.20;
+    contract Vault {
+      uint256 public fee;
+      uint256 public constant WAD = 1e18;
+
+      function setFee(uint256 value) external {
+        fee = value / WAD;
+      }
+    }
+  `);
+
+  const feeControl = facts.feeControls.find((entry) => entry.variable === 'fee');
+  assert.ok(feeControl);
+  assert.equal(feeControl.setters[0].scale, 1e18);
+});
+
+test('extracts fee caps from conjunction conditions', () => {
+  const facts = compileFacts(`
+    pragma solidity 0.8.20;
+    contract Vault {
+      uint256 public feeBps;
+      uint256 public constant MAX_FEE_BPS = 1_000;
+
+      function setFee(uint256 value) external {
+        require(value <= MAX_FEE_BPS && value >= 0, "cap");
+        feeBps = value;
+      }
+    }
+  `);
+
+  const feeControl = facts.feeControls.find((entry) => entry.variable === 'feeBps');
+  assert.ok(feeControl);
+  assert.equal(feeControl.setters[0].capRaw, 'MAX_FEE_BPS');
+  assert.equal(feeControl.setters[0].capValue, 1000);
+});
+
 test('extracts upgrade path facts', () => {
   const facts = compileFacts(`
     pragma solidity 0.8.20;
