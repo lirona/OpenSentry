@@ -44,8 +44,9 @@ OpenSentry does not ship with shared provider credentials.
 
 If you want to run the project, you must use your own model-provider setup:
 
-- For API-backed providers, set your own `AI_API_KEY`.
-- For `codex-cli` and `claude-cli`, use your own local CLI installation and authenticated session, without having to set `AI_API_KEY`.
+- For API-backed providers such as `gemini`, `claude`, and `codex`, set your own `AI_API_KEY`.
+- For local CLI-backed providers such as `codex-cli` and `claude-cli`, use your own local CLI installation and authenticated session, without having to set `AI_API_KEY`.
+- The cloud CLI tool follows the API-backed setup and still requires `AI_API_KEY`.
 
 
 Edit `.dev.vars` and fill in your keys:
@@ -86,7 +87,7 @@ npm test
 
 All tests use stubbed fetch — no API keys or network access needed.
 
-### 6. Run the local CLI
+### 6. Run the local CLI with your own API key
 
 ```bash
 npm run cli -- analyze --path ./contracts
@@ -99,14 +100,27 @@ npm run cli -- analyze --file ./contracts/Vault.sol --json
 npm run cli -- analyze --path ./contracts --out ./report.json --trace-dir ./.opensentry-trace
 ```
 
-The CLI uses the same `AI_PROVIDER`, `AI_API_KEY`, and `AI_MODEL` environment variables as the API-backed flow. `AI_API_KEY` is only required for API-backed providers.
+The CLI uses the same `AI_PROVIDER`, `AI_API_KEY`, and `AI_MODEL` environment variables as the API-backed flow.
 
-Example Codex/OpenAI setup:
+Example API-backed Codex/OpenAI setup:
 
 ```bash
 AI_PROVIDER=codex AI_MODEL=gpt-5.3-codex AI_API_KEY=your_openai_key \
 npm run cli -- analyze --file ./contracts/Vault.sol --trace-dir ./.opensentry-trace
 ```
+
+This is also the setup to use with the cloud CLI tool, since it is API-backed.
+
+### 7. Run the local CLI without your own API key
+
+For local CLI-backed providers, use your own local CLI installation and authenticated session instead of `AI_API_KEY`.
+
+Prerequisites:
+
+- Install the local CLI you want to use so the binary is available in your shell `PATH`.
+- For `codex-cli`, install the `codex` CLI and sign in with your Codex/ChatGPT account before running OpenSentry.
+- For `claude-cli`, install the `claude` CLI and sign in with your Claude Code account before running OpenSentry.
+- Set `AI_PROVIDER` to the matching local provider and choose a compatible `AI_MODEL`.
 
 Example local Codex CLI setup with a personal Codex/ChatGPT login session:
 
