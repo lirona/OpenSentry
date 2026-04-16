@@ -170,36 +170,7 @@ async function runClaudeCli({ spawn, cwd, timeoutMs, jsonSchema, model, systemPr
 
       if (resolved) return;
 
-      if (signal === 'SIGTERM') {
-        finish(errorResult('TIMEOUT', `Model call exceeded ${timeoutMs}ms`));
-        return;
-      }
-
-      const finalText = extractClaudeCliText(stdout);
-      const combined = `${stderr}\n${stdout}`.trim();
-
-      if (code === 0) {
-        if (finalText) {
-          finish({ ok: true, text: finalText });
-          return;
-        }
-
-        finish(errorResult(
-          'PROVIDER_ERROR',
-          `Claude Code returned no structured output: ${combined || 'empty stdout'}`,
-        ));
-        return;
-      }
-
-      if (looksLikeAuthError(combined)) {
-        finish(errorResult('PROVIDER_ERROR', `Claude Code is not authenticated: ${combined}`));
-        return;
-      }
-
-      finish(errorResult(
-        'PROVIDER_ERROR',
-        `Claude Code execution failed: ${combined || `Claude Code exited with code ${code}`}`,
-      ));
+      finish(classifyClaudeCliExit({ code, signal, stdout, stderr, timeoutMs }));
     });
 
     child.stdin.end(prompt);
@@ -231,6 +202,35 @@ function extractClaudeCliText(stdout) {
   if (!fallbackOutput) return '';
 
   return JSON.stringify(fallbackOutput);
+}
+
+function classifyClaudeCliExit({ code, signal, stdout, stderr, timeoutMs }) {
+  if (signal === 'SIGTERM') {
+    return errorResult('TIMEOUT', `Model call exceeded ${timeoutMs}ms`);
+  }
+
+  const combined = `${stderr}\n${stdout}`.trim();
+
+  if (code !== 0) {
+    if (looksLikeAuthError(combined)) {
+      return errorResult('PROVIDER_ERROR', `Claude Code is not authenticated: ${combined}`);
+    }
+
+    return errorResult(
+      'PROVIDER_ERROR',
+      `Claude Code execution failed: ${combined || `Claude Code exited with code ${code}`}`,
+    );
+  }
+
+  const finalText = extractClaudeCliText(stdout);
+  if (finalText) {
+    return { ok: true, text: finalText };
+  }
+
+  return errorResult(
+    'PROVIDER_ERROR',
+    `Claude Code returned no structured output: ${combined || 'empty stdout'}`,
+  );
 }
 
 function normalizeStructuredOutput(candidate) {
@@ -272,6 +272,7 @@ function errorResult(code, message, extra = {}) {
 export { CLAUDE_CLI_BINARY };
 export const __internal = Object.freeze({
   buildClaudeCliSystemPrompt,
+  classifyClaudeCliExit,
   extractClaudeCliText,
   runClaudeCli,
 });

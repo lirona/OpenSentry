@@ -70,6 +70,20 @@ test('extractClaudeCliText returns empty string when Claude Code output is missi
   assert.equal(__internal.extractClaudeCliText(stdout), '');
 });
 
+test('classifyClaudeCliExit treats auth errors as a non-zero exit special case', () => {
+  const result = __internal.classifyClaudeCliExit({
+    code: 1,
+    signal: null,
+    stdout: '',
+    stderr: 'Please sign in to Claude Code first.',
+    timeoutMs: 1000,
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'PROVIDER_ERROR');
+  assert.match(result.error.message, /not authenticated/i);
+});
+
 test('runClaudeCli captures structured_output from stdout on a zero exit code', async () => {
   let args = null;
   const child = makeChildProcess();
