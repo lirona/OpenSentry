@@ -323,6 +323,9 @@ function analyzeFunction({
   if (/^(transfer|transferFrom)$/i.test(name)) {
     tokenFeatures.transferFunctions.push({
       contract: contractName,
+      symbol: name,
+      origin: 'function',
+      name,
       function: name,
       file: fileName,
       line: location.line,
@@ -737,14 +740,25 @@ function locationFromNode(node, fileName, sourceContent) {
 function tokenFeatureEntry(contract, variable, file) {
   return {
     contract,
+    symbol: variable.name,
+    origin: 'variable',
     name: variable.name,
+    function: variable.name,
     file,
     line: variable.location.line,
   };
 }
 
 function functionFeatureEntry(contract, name, file, line) {
-  return { contract, function: name, file, line };
+  return {
+    contract,
+    symbol: name,
+    origin: 'function',
+    name,
+    function: name,
+    file,
+    line,
+  };
 }
 
 function pushTokenFeatures(target, source) {

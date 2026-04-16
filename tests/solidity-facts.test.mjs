@@ -205,6 +205,7 @@ test('extracts token feature facts', () => {
       function mint(address to, uint256 amount) external {}
       function burn(address from, uint256 amount) external {}
       function _transfer(address from, address to, uint256 amount) internal {}
+      function enableTrading() external {}
       function setBlacklist(address user, bool blocked) external { blacklist[user] = blocked; }
     }
   `);
@@ -215,6 +216,9 @@ test('extracts token feature facts', () => {
   assert.ok(facts.tokenFeatures.blacklistControls.length > 0);
   assert.ok(facts.tokenFeatures.tradingToggles.some((entry) => entry.name === 'tradingEnabled'));
   assert.ok(facts.tokenFeatures.maxLimits.some((entry) => entry.name === 'maxWallet'));
+  assert.ok(facts.tokenFeatures.mintFunctions.some((entry) => entry.symbol === 'mint' && entry.origin === 'function'));
+  assert.ok(facts.tokenFeatures.tradingToggles.some((entry) => entry.symbol === 'tradingEnabled' && entry.origin === 'variable'));
+  assert.ok(facts.tokenFeatures.tradingToggles.some((entry) => entry.symbol === 'enableTrading' && entry.origin === 'function'));
 });
 
 test('detects fee-on-transfer signals from transfer writes and prefix unary operations', () => {
