@@ -67,7 +67,7 @@ test('extracts mutable parameters and fee controls', () => {
   assert.equal(feeControl.setters[0].capValue, 1000);
 });
 
-test('extracts arbitrary fee scales from setter expressions', () => {
+test('extracts explicit fee scales from setter expressions', () => {
   const facts = compileFacts(`
     pragma solidity 0.8.20;
     contract Vault {
@@ -83,6 +83,23 @@ test('extracts arbitrary fee scales from setter expressions', () => {
   const feeControl = facts.feeControls.find((entry) => entry.variable === 'fee');
   assert.ok(feeControl);
   assert.equal(feeControl.setters[0].scale, 1e18);
+});
+
+test('does not infer fee scales from arbitrary denominators', () => {
+  const facts = compileFacts(`
+    pragma solidity 0.8.20;
+    contract Vault {
+      uint256 public fee;
+
+      function setFee(uint256 value) external {
+        fee = value / 2;
+      }
+    }
+  `);
+
+  const feeControl = facts.feeControls.find((entry) => entry.variable === 'fee');
+  assert.ok(feeControl);
+  assert.equal(feeControl.setters[0].scale, null);
 });
 
 test('extracts fee caps from conjunction conditions', () => {

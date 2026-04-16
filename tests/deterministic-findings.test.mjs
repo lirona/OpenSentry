@@ -41,6 +41,20 @@ test('flags an uncapped configurable fee that can reach 100%', () => {
   assert.match(finding.summary, /100%/i);
 });
 
+test('does not infer 100% fee findings from arbitrary denominators', () => {
+  const { findings } = deriveFindings(`
+    pragma solidity 0.8.20;
+    contract Vault {
+      uint256 public fee;
+      function setFee(uint256 value) external {
+        fee = value / 2;
+      }
+    }
+  `);
+
+  assert.equal(findings.find((entry) => entry.ruleId === 'fee-uncapped-100'), undefined);
+});
+
 test('flags a fee cap that still allows 100%', () => {
   const { findings } = deriveFindings(`
     pragma solidity 0.8.20;

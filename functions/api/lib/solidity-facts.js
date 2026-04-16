@@ -17,6 +17,8 @@ const TOKEN_FEATURE_PATTERNS = Object.freeze({
 });
 const HUNDRED_SCALE = 100;
 const BPS_SCALE = 10_000;
+const KNOWN_FEE_SCALES = Object.freeze([HUNDRED_SCALE, BPS_SCALE, 1_000_000, 1e18]);
+const SCALE_NAME_RE = /(bps|basis|percent|pct|scale|denominator|precision|wad)/i;
 
 export function extractSolidityFacts({ compilerOutput, files = [] } = {}) {
   if (!compilerOutput || typeof compilerOutput !== 'object') {
@@ -514,26 +516,28 @@ function inferFeeScale(body, writes, stateVariables, constantValues) {
   const feeWrites = writes.filter((name) => FEE_NAME_RE.test(name) && !FEE_DESTINATION_RE.test(name));
   if (feeWrites.length === 0) return null;
 
-  let scale = null;
+  const candidateValues = new Set();
   walkAst(body, (node) => {
     if (node.nodeType !== 'BinaryOperation' || node.operator !== '/') return;
+    const denominatorName = referencedName(node.rightExpression);
     const denominatorValue = resolveNumericValue(node.rightExpression, constantValues);
-    if (!Number.isFinite(denominatorValue) || denominatorValue <= 1) return;
-    scale = scale === null ? denominatorValue : Math.max(scale, denominatorValue);
+    if (!isRecognizedFeeScale(denominatorName, denominatorValue)) return;
+    candidateValues.add(denominatorValue);
   });
 
-  if (scale !== null) return scale;
+  const explicitScale = uniqueCandidateValue(candidateValues);
+  if (explicitScale !== null) return explicitScale;
 
   for (const name of feeWrites) {
     if (/bps|basis/i.test(name)) return BPS_SCALE;
     if (/percent|pct/i.test(name)) return HUNDRED_SCALE;
   }
   for (const [name, value] of constantValues.entries()) {
-    if (/bps|basis/i.test(name) && value === BPS_SCALE) return BPS_SCALE;
-    if (/percent|pct/i.test(name) && value === HUNDRED_SCALE) return HUNDRED_SCALE;
+    if (!isRecognizedFeeScale(name, value)) continue;
+    candidateValues.add(value);
   }
 
-  return null;
+  return uniqueCandidateValue(candidateValues);
 }
 
 function determineHundredPercent(cap, scale) {
@@ -667,6 +671,17 @@ function resolveNumericValue(node, constantValues) {
   const name = referencedName(node);
   if (!name) return null;
   return constantValues.get(name) ?? null;
+}
+
+function isRecognizedFeeScale(name, value) {
+  if (!Number.isFinite(value) || value <= 1) return false;
+  if (KNOWN_FEE_SCALES.includes(value)) return true;
+  return typeof name === 'string' && SCALE_NAME_RE.test(name);
+}
+
+function uniqueCandidateValue(values) {
+  if (values.size !== 1) return null;
+  return [...values][0];
 }
 
 function booleanLiteralValue(node) {
