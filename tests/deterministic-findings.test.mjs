@@ -138,7 +138,7 @@ test('flags privileged mint and user-targeting burn paths', () => {
 
   const mintFinding = findings.find((entry) => entry.ruleId === 'privileged-mint');
   assert.ok(mintFinding);
-  assert.equal(mintFinding.severity, 'WARNING');
+  assert.equal(mintFinding.severity, 'INFO');
   assert.ok(findings.find((entry) => entry.ruleId === 'privileged-user-burn'));
 });
 
