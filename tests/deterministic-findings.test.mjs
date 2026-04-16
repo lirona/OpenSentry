@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { compileSourceWithBundledSolc } from '../functions/api/lib/solc-compile.js';
 import { extractSolidityFacts } from '../functions/api/lib/solidity-facts.js';
-import { deriveDeterministicFindings } from '../functions/api/lib/deterministic-findings.js';
+import { deriveDeterministicFindings, __internal } from '../functions/api/lib/deterministic-findings.js';
 
 function deriveFindings(source, compiler = 'pragma:0.8.20', fileName = 'Fixture.sol') {
   const files = [{ name: fileName, content: source }];
@@ -39,6 +39,20 @@ test('flags an uncapped configurable fee that can reach 100%', () => {
   assert.ok(finding);
   assert.equal(finding.severity, 'CRITICAL');
   assert.match(finding.summary, /100%/i);
+});
+
+test('does not infer 100% fee findings from arbitrary denominators', () => {
+  const { findings } = deriveFindings(`
+    pragma solidity 0.8.20;
+    contract Vault {
+      uint256 public fee;
+      function setFee(uint256 value) external {
+        fee = value / 2;
+      }
+    }
+  `);
+
+  assert.equal(findings.find((entry) => entry.ruleId === 'fee-uncapped-100'), undefined);
 });
 
 test('flags a fee cap that still allows 100%', () => {
@@ -179,4 +193,19 @@ test('flags privileged upgrade paths without a visible timelock', () => {
   const finding = findings.find((entry) => entry.ruleId === 'upgrade-without-timelock');
   assert.ok(finding);
   assert.equal(finding.severity, 'WARNING');
+});
+
+test('dedupe finding keys are safe when fields contain delimiters', () => {
+  const first = __internal.dedupeFindingKey({
+    ruleId: 'a|b',
+    location: 'c',
+    check: 'd',
+  });
+  const second = __internal.dedupeFindingKey({
+    ruleId: 'a',
+    location: 'b|c',
+    check: 'd',
+  });
+
+  assert.notEqual(first, second);
 });

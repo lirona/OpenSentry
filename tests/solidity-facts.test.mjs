@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { compileSourceWithBundledSolc } from '../functions/api/lib/solc-compile.js';
-import { extractSolidityFacts } from '../functions/api/lib/solidity-facts.js';
+import { extractSolidityFacts, __internal } from '../functions/api/lib/solidity-facts.js';
 
 function compileFacts(source, compiler = 'pragma:0.8.20', fileName = 'Fixture.sol') {
   const files = [{ name: fileName, content: source }];
@@ -67,7 +67,7 @@ test('extracts mutable parameters and fee controls', () => {
   assert.equal(feeControl.setters[0].capValue, 1000);
 });
 
-test('extracts arbitrary fee scales from setter expressions', () => {
+test('extracts explicit fee scales from setter expressions', () => {
   const facts = compileFacts(`
     pragma solidity 0.8.20;
     contract Vault {
@@ -83,6 +83,23 @@ test('extracts arbitrary fee scales from setter expressions', () => {
   const feeControl = facts.feeControls.find((entry) => entry.variable === 'fee');
   assert.ok(feeControl);
   assert.equal(feeControl.setters[0].scale, 1e18);
+});
+
+test('does not infer fee scales from arbitrary denominators', () => {
+  const facts = compileFacts(`
+    pragma solidity 0.8.20;
+    contract Vault {
+      uint256 public fee;
+
+      function setFee(uint256 value) external {
+        fee = value / 2;
+      }
+    }
+  `);
+
+  const feeControl = facts.feeControls.find((entry) => entry.variable === 'fee');
+  assert.ok(feeControl);
+  assert.equal(feeControl.setters[0].scale, null);
 });
 
 test('extracts fee caps from conjunction conditions', () => {
@@ -105,6 +122,26 @@ test('extracts fee caps from conjunction conditions', () => {
   assert.equal(feeControl.setters[0].capValue, 1000);
 });
 
+test('extracts exclusive fee caps from require conditions', () => {
+  const facts = compileFacts(`
+    pragma solidity 0.8.20;
+    contract Vault {
+      uint256 public feeBps;
+      uint256 public constant MAX_FEE_BPS = 1_000;
+
+      function setFee(uint256 value) external {
+        require(value < MAX_FEE_BPS, "cap");
+        feeBps = value;
+      }
+    }
+  `);
+
+  const feeControl = facts.feeControls.find((entry) => entry.variable === 'feeBps');
+  assert.ok(feeControl);
+  assert.equal(feeControl.setters[0].capRaw, 'MAX_FEE_BPS');
+  assert.equal(feeControl.setters[0].capValue, 999);
+});
+
 test('extracts fee caps from terminating if guards', () => {
   const facts = compileFacts(`
     pragma solidity 0.8.20;
@@ -125,6 +162,28 @@ test('extracts fee caps from terminating if guards', () => {
   assert.ok(feeControl);
   assert.equal(feeControl.setters[0].capRaw, 'MAX_FEE_BPS');
   assert.equal(feeControl.setters[0].capValue, 1000);
+});
+
+test('extracts exclusive fee caps from terminating if guards', () => {
+  const facts = compileFacts(`
+    pragma solidity 0.8.20;
+    contract Vault {
+      uint256 public feeBps;
+      uint256 public constant MAX_FEE_BPS = 1_000;
+
+      function setFee(uint256 value) external {
+        if (value >= MAX_FEE_BPS) {
+          revert();
+        }
+        feeBps = value;
+      }
+    }
+  `);
+
+  const feeControl = facts.feeControls.find((entry) => entry.variable === 'feeBps');
+  assert.ok(feeControl);
+  assert.equal(feeControl.setters[0].capRaw, 'MAX_FEE_BPS');
+  assert.equal(feeControl.setters[0].capValue, 999);
 });
 
 test('does not infer fee caps from non-terminating if branches', () => {
@@ -205,6 +264,7 @@ test('extracts token feature facts', () => {
       function mint(address to, uint256 amount) external {}
       function burn(address from, uint256 amount) external {}
       function _transfer(address from, address to, uint256 amount) internal {}
+      function enableTrading() external {}
       function setBlacklist(address user, bool blocked) external { blacklist[user] = blocked; }
     }
   `);
@@ -215,6 +275,9 @@ test('extracts token feature facts', () => {
   assert.ok(facts.tokenFeatures.blacklistControls.length > 0);
   assert.ok(facts.tokenFeatures.tradingToggles.some((entry) => entry.name === 'tradingEnabled'));
   assert.ok(facts.tokenFeatures.maxLimits.some((entry) => entry.name === 'maxWallet'));
+  assert.ok(facts.tokenFeatures.mintFunctions.some((entry) => entry.symbol === 'mint' && entry.origin === 'function'));
+  assert.ok(facts.tokenFeatures.tradingToggles.some((entry) => entry.symbol === 'tradingEnabled' && entry.origin === 'variable'));
+  assert.ok(facts.tokenFeatures.tradingToggles.some((entry) => entry.symbol === 'enableTrading' && entry.origin === 'function'));
 });
 
 test('detects fee-on-transfer signals from transfer writes and prefix unary operations', () => {
@@ -250,4 +313,12 @@ test('does not infer pause guards from pause-like event names alone', () => {
   assert.ok(exit);
   assert.equal(exit.gatedByPause, false);
   assert.deepEqual(exit.guardKinds, []);
+});
+
+test('booleanLiteralValue accepts string and boolean AST values', () => {
+  assert.equal(__internal.booleanLiteralValue({ nodeType: 'Literal', kind: 'bool', value: 'true' }), true);
+  assert.equal(__internal.booleanLiteralValue({ nodeType: 'Literal', kind: 'bool', value: 'false' }), false);
+  assert.equal(__internal.booleanLiteralValue({ nodeType: 'Literal', kind: 'bool', value: true }), true);
+  assert.equal(__internal.booleanLiteralValue({ nodeType: 'Literal', kind: 'bool', value: false }), false);
+  assert.equal(__internal.booleanLiteralValue({ nodeType: 'Literal', kind: 'number', value: '1' }), null);
 });
