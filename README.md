@@ -1,12 +1,14 @@
 # OpenSentry
 
-**Decentralizing smart contract security, bringing audit-grade protection to individuals as a public good.**
+**OpenSentry is a free, open-source wallet safety and smart contract risk analysis tool for non-technical users.**
 
-OpenSentry analyzes smart contracts the way a professional auditor would and delivers the findings in plain language at the moment of signing. E.g:
+OpenSentry analyzes smart contracts the way a professional auditor would and delivers the findings in plain language at the moment of signing. The goal is not only to detect vulnerabilities, but also to surface protocol features that may be intentional yet still create meaningful user risk or hidden trust assumptions that users should understand before interacting with a protocol.
 
-> *"All your deposited funds could be withdrawn at any time by the contract's admin — make sure you trust this protocol."*
+Example warnings produced by the prototype include:
+
+> *"Platform fee is not constrained, so a 100% fee is allowed."*
 >
-> *"Withdrawing from this contract will cost you an extra ~$7 (0.00048 ETH) due to a rounding error. You will receive less than you are owed."*
+> *"Reserved balances can be locked indefinitely because there is no timeout or user-controlled unlock path."*
 
 **OpenSentry is free, open source, and built as a public good.**
 
@@ -14,7 +16,13 @@ OpenSentry analyzes smart contracts the way a professional auditor would and del
 
 ## How It Works
 
-OpenSentry orchestrates specialized AI security agents that analyze a smart contract in parallel, each attacking the code from a distinct angle. An orchestration layer deduplicates findings across all agents, resolves severity conflicts, gates every result through a quality-validation pipeline, and produces a plain-language risk report.
+OpenSentry's analysis pipeline, used by both local CLI and API-backed flows, can ingest one or more contracts, compile them through a Solidity facts extraction stage built on `solc` AST output, and analyze them through a set of specialized security analysis agents.
+
+The compiler-backed stage deterministically extracts a normalized, queryable representation of contract structure and behavior, including privileged roles, mutable parameters, fee configuration and caps, upgrade paths, token features, external dependencies, and user exit conditions. It also derives a small set of high-confidence deterministic findings for clearly detectable user risks, such as uncapped configurable fees, direct privileged upgrade paths with no timelock, or admin-controlled withdrawal-blocking paths.
+
+These compiler-derived facts and deterministic findings are supplied to downstream agents as trusted context, while the raw contract source remains separately handled as untrusted input, so the analysis is grounded not only in source text but also in normalized compiler-backed evidence.
+
+The security analysis agents produce structured findings across access control and upgradeability, code-level vulnerabilities, token mechanics, oracle and external dependency risks, MEV and transaction safety, economic and fee risks, governance and centralization risks, and transparency and verification issues. An orchestration layer then merges these results into a plain-language risk report for non-technical users.
 
 **Supported chains:** Ethereum, Base, Arbitrum, Optimism, Polygon
 
