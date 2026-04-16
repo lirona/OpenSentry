@@ -27,6 +27,14 @@ const CODEX_CLI_ENV = {
     text: JSON.stringify(validAgentOutput()),
   }),
 };
+const CLAUDE_CLI_ENV = {
+  AI_PROVIDER: 'claude-cli',
+  AI_MODEL: 'sonnet',
+  __CLAUDE_CLI_RUNNER: async () => ({
+    ok: true,
+    text: JSON.stringify(validAgentOutput()),
+  }),
+};
 const KEY = 'access-control';
 const SYSTEM_PROMPT = 'PREAMBLE\n\nAGENT BODY';
 const SOURCE = '// SPDX-License-Identifier: MIT\npragma solidity 0.8.20;\ncontract C { function f() public {} }';
@@ -349,6 +357,14 @@ test('codex-cli provider happy path returns ok:true without AI_API_KEY', async (
   assert.equal(out.result.agent, 'Access Control');
 });
 
+test('claude-cli provider happy path returns ok:true without AI_API_KEY', async () => {
+  const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, CLAUDE_CLI_ENV);
+  assert.equal(out.ok, true);
+  assert.equal(out.key, KEY);
+  assert.equal(out.attempts, 1);
+  assert.equal(out.result.agent, 'Access Control');
+});
+
 test('codex-cli provider surfaces local execution errors', async () => {
   const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, {
     AI_PROVIDER: 'codex-cli',
@@ -358,6 +374,23 @@ test('codex-cli provider surfaces local execution errors', async () => {
       error: {
         code: 'PROVIDER_ERROR',
         message: 'Codex CLI execution failed: not authenticated',
+      },
+    }),
+  });
+
+  assert.equal(out.ok, false);
+  assert.equal(out.error.code, 'PROVIDER_ERROR');
+});
+
+test('claude-cli provider surfaces local execution errors', async () => {
+  const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, {
+    AI_PROVIDER: 'claude-cli',
+    AI_MODEL: 'sonnet',
+    __CLAUDE_CLI_RUNNER: async () => ({
+      ok: false,
+      error: {
+        code: 'PROVIDER_ERROR',
+        message: 'Claude Code execution failed: not authenticated',
       },
     }),
   });
@@ -384,10 +417,38 @@ test('codex-cli provider reports runner stderr when no output file is produced',
   assert.match(out.error.message, /~\/\.codex\/sessions|permission denied/i);
 });
 
+test('claude-cli provider reports runner stderr when no structured output is produced', async () => {
+  const out = await runAgent(KEY, SYSTEM_PROMPT, SOURCE, METADATA, {
+    AI_PROVIDER: 'claude-cli',
+    AI_MODEL: 'sonnet',
+    __CLAUDE_CLI_RUNNER: async () => ({
+      ok: false,
+      error: {
+        code: 'PROVIDER_ERROR',
+        message: 'Claude Code execution failed: Please sign in to Claude Code first.',
+      },
+    }),
+  });
+
+  assert.equal(out.ok, false);
+  assert.equal(out.error.code, 'PROVIDER_ERROR');
+  assert.match(out.error.message, /sign in|authenticated/i);
+});
+
 test('codex-cli provider gets a larger default local timeout budget', () => {
   const provider = __internal.resolveModelProvider({
     AI_PROVIDER: 'codex-cli',
     AI_MODEL: 'gpt-5.3-codex',
+  });
+
+  assert.equal(__internal.getTotalBudgetMs({}, provider), 8 * 60_000);
+  assert.equal(__internal.getPerAttemptCapMs({}, provider, 8 * 60_000), 8 * 60_000);
+});
+
+test('claude-cli provider gets a larger default local timeout budget', () => {
+  const provider = __internal.resolveModelProvider({
+    AI_PROVIDER: 'claude-cli',
+    AI_MODEL: 'sonnet',
   });
 
   assert.equal(__internal.getTotalBudgetMs({}, provider), 8 * 60_000);

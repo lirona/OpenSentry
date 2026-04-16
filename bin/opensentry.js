@@ -161,8 +161,8 @@ function usage() {
     '  opensentry analyze --file <contract.sol> [--chain <name>] [--json] [--out <file>] [--trace-dir <dir>]\n' +
     '\n' +
     'Environment:\n' +
-    '  AI_PROVIDER   gemini or claude (defaults to gemini)\n' +
-    '  AI_API_KEY    model API key\n' +
+    '  AI_PROVIDER   gemini, claude, codex, codex-cli, or claude-cli (defaults to gemini)\n' +
+    '  AI_API_KEY    model API key for API-backed providers\n' +
     '  AI_MODEL      model name\n'
   );
 }

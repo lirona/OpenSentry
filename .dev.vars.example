@@ -3,11 +3,11 @@
 # under Settings -> Environment variables (marked as Encrypted / Secret).
 
 # --- AI provider ---
-# Supported values: "gemini" (default), "claude", "codex", or "codex-cli".
+# Supported values: "gemini" (default), "claude", "codex", "codex-cli", or "claude-cli".
 AI_PROVIDER="gemini"
 AI_API_KEY=""
 AI_MODEL=""
-# Optional local/runtime overrides for slower providers like codex-cli.
+# Optional local/runtime overrides for slower providers like codex-cli or claude-cli.
 AI_TOTAL_BUDGET_MS=""
 AI_PER_ATTEMPT_TIMEOUT_MS=""
 # --- API abuse protection ---
