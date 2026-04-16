@@ -102,6 +102,42 @@ test('does not infer fee scales from arbitrary denominators', () => {
   assert.equal(feeControl.setters[0].scale, null);
 });
 
+test('infers non-canonical named scales when used as the division denominator', () => {
+  const facts = compileFacts(`
+    pragma solidity 0.8.20;
+    contract Vault {
+      uint256 public fee;
+      uint256 public constant SCALE = 1e12;
+
+      function setFee(uint256 value) external {
+        fee = value / SCALE;
+      }
+    }
+  `);
+
+  const feeControl = facts.feeControls.find((entry) => entry.variable === 'fee');
+  assert.ok(feeControl);
+  assert.equal(feeControl.setters[0].scale, 1e12);
+});
+
+test('does not infer fee scales from arbitrary-valued constants with scale-like names', () => {
+  const facts = compileFacts(`
+    pragma solidity 0.8.20;
+    contract Vault {
+      uint256 public fee;
+      uint256 public constant PRECISION = 12345;
+
+      function setFee(uint256 value) external {
+        fee = value;
+      }
+    }
+  `);
+
+  const feeControl = facts.feeControls.find((entry) => entry.variable === 'fee');
+  assert.ok(feeControl);
+  assert.equal(feeControl.setters[0].scale, null);
+});
+
 test('extracts fee caps from conjunction conditions', () => {
   const facts = compileFacts(`
     pragma solidity 0.8.20;

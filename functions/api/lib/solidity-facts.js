@@ -521,7 +521,7 @@ function inferFeeScale(body, writes, stateVariables, constantValues) {
     if (node.nodeType !== 'BinaryOperation' || node.operator !== '/') return;
     const denominatorName = referencedName(node.rightExpression);
     const denominatorValue = resolveNumericValue(node.rightExpression, constantValues);
-    if (!isRecognizedFeeScale(denominatorName, denominatorValue)) return;
+    if (!isAstDenominatorFeeScale(denominatorName, denominatorValue)) return;
     candidateValues.add(denominatorValue);
   });
 
@@ -533,7 +533,7 @@ function inferFeeScale(body, writes, stateVariables, constantValues) {
     if (/percent|pct/i.test(name)) return HUNDRED_SCALE;
   }
   for (const [name, value] of constantValues.entries()) {
-    if (!isRecognizedFeeScale(name, value)) continue;
+    if (!isConstantFallbackFeeScale(name, value)) continue;
     candidateValues.add(value);
   }
 
@@ -673,9 +673,18 @@ function resolveNumericValue(node, constantValues) {
   return constantValues.get(name) ?? null;
 }
 
-function isRecognizedFeeScale(name, value) {
+// A division denominator inside a fee-writing expression is strong evidence
+// that the referenced value is the intended scale.
+function isAstDenominatorFeeScale(name, value) {
   if (!Number.isFinite(value) || value <= 1) return false;
   if (KNOWN_FEE_SCALES.includes(value)) return true;
+  return typeof name === 'string' && SCALE_NAME_RE.test(name);
+}
+
+// A top-level constant scan is weaker evidence, so require both a canonical
+// scale value and a scale-like name before inferring a fallback scale.
+function isConstantFallbackFeeScale(name, value) {
+  if (!Number.isFinite(value) || !KNOWN_FEE_SCALES.includes(value)) return false;
   return typeof name === 'string' && SCALE_NAME_RE.test(name);
 }
 
