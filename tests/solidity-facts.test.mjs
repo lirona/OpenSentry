@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { compileSourceWithBundledSolc } from '../functions/api/lib/solc-compile.js';
-import { extractSolidityFacts } from '../functions/api/lib/solidity-facts.js';
+import { extractSolidityFacts, __internal } from '../functions/api/lib/solidity-facts.js';
 
 function compileFacts(source, compiler = 'pragma:0.8.20', fileName = 'Fixture.sol') {
   const files = [{ name: fileName, content: source }];
@@ -313,4 +313,12 @@ test('does not infer pause guards from pause-like event names alone', () => {
   assert.ok(exit);
   assert.equal(exit.gatedByPause, false);
   assert.deepEqual(exit.guardKinds, []);
+});
+
+test('booleanLiteralValue accepts string and boolean AST values', () => {
+  assert.equal(__internal.booleanLiteralValue({ nodeType: 'Literal', kind: 'bool', value: 'true' }), true);
+  assert.equal(__internal.booleanLiteralValue({ nodeType: 'Literal', kind: 'bool', value: 'false' }), false);
+  assert.equal(__internal.booleanLiteralValue({ nodeType: 'Literal', kind: 'bool', value: true }), true);
+  assert.equal(__internal.booleanLiteralValue({ nodeType: 'Literal', kind: 'bool', value: false }), false);
+  assert.equal(__internal.booleanLiteralValue({ nodeType: 'Literal', kind: 'number', value: '1' }), null);
 });

@@ -686,9 +686,9 @@ function uniqueCandidateValue(values) {
 
 function booleanLiteralValue(node) {
   if (!node || typeof node !== 'object') return null;
-  if (node.nodeType !== 'Literal' || node.kind !== 'bool' || typeof node.value !== 'string') return null;
-  if (node.value === 'true') return true;
-  if (node.value === 'false') return false;
+  if (node.nodeType !== 'Literal' || node.kind !== 'bool') return null;
+  if (node.value === 'true' || node.value === true) return true;
+  if (node.value === 'false' || node.value === false) return false;
   return null;
 }
 
@@ -820,6 +820,7 @@ export const __internal = Object.freeze({
   childNodes,
   walkAst,
   locationFromNode,
+  booleanLiteralValue,
   inferFeeCap,
   inferFeeScale,
   determineHundredPercent,
