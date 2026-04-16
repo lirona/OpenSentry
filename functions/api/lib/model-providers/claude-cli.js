@@ -34,7 +34,9 @@ export function createClaudeCliProvider() {
 
         const result = await runClaudeCli({
           spawn,
-          cwd: process.cwd(),
+          // Run inside the temp directory so Claude Code does not discover
+          // project-local CLAUDE.md context or cwd-keyed project memory.
+          cwd: tempDir,
           timeoutMs,
           jsonSchema: JSON.stringify(buildOutputSchema()),
           model: env.AI_MODEL,
