@@ -332,7 +332,7 @@ function analyzeFunction({
       gatedByBlacklist: guardKinds.includes('blacklist'),
     });
   }
-  if (FEE_NAME_RE.test(name) && /^transfer$/i.test(name)) {
+  if (hasFeeOnTransferSignal(name, writes)) {
     tokenFeatures.feeOnTransferSignals.push(functionFeatureEntry(contractName, name, fileName, location.line));
   }
   if (PAUSE_NAME_RE.test(name) && /blacklist|blocklist|denylist/i.test(name)) {
@@ -375,7 +375,7 @@ function collectStateWrites(body, stateVariables) {
       const written = referencedName(node.leftHandSide);
       if (written && stateVariables.has(written)) writes.add(written);
     }
-    if (node.nodeType === 'UnaryOperation' && node.prefix === false) {
+    if (node.nodeType === 'UnaryOperation' && (node.operator === '++' || node.operator === '--')) {
       const written = referencedName(node.subExpression);
       if (written && stateVariables.has(written)) writes.add(written);
     }
@@ -498,6 +498,11 @@ function determineHundredPercent(cap, scale) {
   if (!cap) return true;
   if (cap.value === null) return null;
   return cap.value >= scale;
+}
+
+function hasFeeOnTransferSignal(name, writes) {
+  if (!/^(_transfer|_update|transfer|transferFrom)$/i.test(name)) return false;
+  return writes.some((written) => FEE_NAME_RE.test(written) && !FEE_DESTINATION_RE.test(written));
 }
 
 function hasInlineSenderCheck(body, stateVariables) {
@@ -702,13 +707,24 @@ function dedupeArray(items) {
   const deduped = [];
 
   for (const item of items) {
-    const key = JSON.stringify(item);
+    const key = stableSerialize(item);
     if (seen.has(key)) continue;
     seen.add(key);
     deduped.push(item);
   }
 
   return deduped;
+}
+
+function stableSerialize(value) {
+  if (value === undefined) return 'undefined';
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map((entry) => stableSerialize(entry)).join(',')}]`;
+
+  return `{${Object.keys(value)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableSerialize(value[key])}`)
+    .join(',')}}`;
 }
 
 export const __internal = Object.freeze({

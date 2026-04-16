@@ -171,3 +171,20 @@ test('extracts token feature facts', () => {
   assert.ok(facts.tokenFeatures.tradingToggles.some((entry) => entry.name === 'tradingEnabled'));
   assert.ok(facts.tokenFeatures.maxLimits.some((entry) => entry.name === 'maxWallet'));
 });
+
+test('detects fee-on-transfer signals from transfer writes and prefix unary operations', () => {
+  const facts = compileFacts(`
+    pragma solidity 0.8.20;
+    contract Token {
+      uint256 public feeCounter;
+
+      function transfer(address to, uint256 amount) external returns (bool) {
+        ++feeCounter;
+        return true;
+      }
+    }
+  `);
+
+  assert.ok(facts.mutableParameters.some((entry) => entry.function === 'transfer' && entry.writes.includes('feeCounter')));
+  assert.ok(facts.tokenFeatures.feeOnTransferSignals.some((entry) => entry.name === 'transfer'));
+});

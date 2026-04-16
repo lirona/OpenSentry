@@ -261,11 +261,7 @@ function dedupeFindings(findings) {
   const seen = new Set();
   const deduped = [];
   for (const finding of findings) {
-    const key = JSON.stringify({
-      ruleId: finding.ruleId,
-      location: finding.location,
-      check: finding.check,
-    });
+    const key = `${finding.ruleId || ''}|${finding.location || ''}|${finding.check || ''}`;
     if (seen.has(key)) continue;
     seen.add(key);
     deduped.push(finding);

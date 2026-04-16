@@ -49,7 +49,7 @@ export function runCompilerFactsStage(sourceResult) {
     return {
       factsStage: {
         ...base,
-        status: 'compile_error',
+        status: 'no_analyzable_files',
         reason: 'missing_requested_asts',
         coverage: 'none',
         analyzedFiles: [],

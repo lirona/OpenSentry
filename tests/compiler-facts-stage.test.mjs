@@ -51,3 +51,18 @@ test('compiler facts stage helpers keep the analyzable subset when AST coverage 
   const filtered = __internal.filterCompilerOutputToFiles(compilerOutput, partition.analyzableFiles);
   assert.deepEqual(Object.keys(filtered.sources), ['Good.sol']);
 });
+
+test('compiler facts stage reports no analyzable files when requested file names cannot map to AST output', () => {
+  const result = runCompilerFactsStage({
+    compiler: 'pragma:0.8.20',
+    files: [
+      {
+        name: '',
+        content: 'pragma solidity 0.8.20; contract T {}',
+      },
+    ],
+  });
+
+  assert.equal(result.factsStage.status, 'no_analyzable_files');
+  assert.equal(result.factsStage.reason, 'missing_requested_asts');
+});
