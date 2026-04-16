@@ -136,8 +136,34 @@ test('flags privileged mint and user-targeting burn paths', () => {
     }
   `);
 
-  assert.ok(findings.find((entry) => entry.ruleId === 'privileged-mint'));
+  const mintFinding = findings.find((entry) => entry.ruleId === 'privileged-mint');
+  assert.ok(mintFinding);
+  assert.equal(mintFinding.severity, 'WARNING');
   assert.ok(findings.find((entry) => entry.ruleId === 'privileged-user-burn'));
+});
+
+test('does not flag an uncapped fee when a conjunction includes a visible cap', () => {
+  const { facts, findings } = deriveFindings(`
+    pragma solidity 0.8.20;
+    contract Vault {
+      uint256 public feeBps;
+      uint256 public constant MAX_FEE_BPS = 1_000;
+
+      function setFeeBps(uint256 value) external {
+        require(value <= MAX_FEE_BPS && value >= 0, "cap");
+        feeBps = value;
+      }
+
+      function preview(uint256 amount) external view returns (uint256) {
+        return amount - ((amount * feeBps) / 10_000);
+      }
+    }
+  `);
+
+  const feeControl = facts.feeControls.find((entry) => entry.variable === 'feeBps');
+  assert.ok(feeControl);
+  assert.equal(feeControl.setters[0].capValue, 1000);
+  assert.equal(findings.find((entry) => entry.ruleId === 'fee-uncapped-100'), undefined);
 });
 
 test('flags privileged upgrade paths without a visible timelock', () => {

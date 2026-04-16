@@ -410,34 +410,59 @@ function inferFeeCap(body, parameters, constantValues) {
 }
 
 function capFromCondition(condition, parameters, constantValues, invert = false) {
-  if (!condition || condition.nodeType !== 'BinaryOperation') return null;
+  if (!condition || typeof condition !== 'object') return null;
+  if (condition.nodeType === 'BinaryOperation' && (condition.operator === '&&' || condition.operator === '||')) {
+    const left = capFromCondition(condition.leftExpression, parameters, constantValues, invert);
+    const right = capFromCondition(condition.rightExpression, parameters, constantValues, invert);
+    const effectiveOperator = invert
+      ? (condition.operator === '&&' ? '||' : '&&')
+      : condition.operator;
+    return effectiveOperator === '&&'
+      ? stricterCap(left, right)
+      : guaranteedCapAcrossBranches(left, right);
+  }
+  if (condition.nodeType !== 'BinaryOperation') return null;
   const left = referencedName(condition.leftExpression);
   const right = referencedName(condition.rightExpression);
-  const literalRight = literalValue(condition.rightExpression);
-  const literalLeft = literalValue(condition.leftExpression);
+  const literalRight = resolveNumericValue(condition.rightExpression, constantValues);
+  const literalLeft = resolveNumericValue(condition.leftExpression, constantValues);
 
   const leftIsParam = left && parameters.includes(left);
   const rightIsParam = right && parameters.includes(right);
 
   if (leftIsParam && (condition.operator === '<=' || condition.operator === '<')) {
-    return capCandidate(right, literalRight, constantValues, condition.operator === '<');
+    return capCandidate(right, literalRight, condition.operator === '<');
   }
   if (rightIsParam && (condition.operator === '>=' || condition.operator === '>')) {
-    return capCandidate(left, literalLeft, constantValues, condition.operator === '>');
+    return capCandidate(left, literalLeft, condition.operator === '>');
   }
   if (invert && leftIsParam && (condition.operator === '>' || condition.operator === '>=')) {
-    return capCandidate(right, literalRight, constantValues, condition.operator === '>=');
+    return capCandidate(right, literalRight, condition.operator === '>=');
   }
   if (invert && rightIsParam && (condition.operator === '<' || condition.operator === '<=')) {
-    return capCandidate(left, literalLeft, constantValues, condition.operator === '<=');
+    return capCandidate(left, literalLeft, condition.operator === '<=');
   }
   return null;
 }
 
-function capCandidate(raw, literal, constantValues, exclusive) {
-  const resolved = literal ?? (raw ? constantValues.get(raw) ?? null : null);
+function stricterCap(left, right) {
+  if (!left) return right;
+  if (!right) return left;
+  if (left.value === null) return right;
+  if (right.value === null) return left;
+  return left.value <= right.value ? left : right;
+}
+
+function guaranteedCapAcrossBranches(left, right) {
+  if (!left || !right) return null;
+  if (left.value === null) return left;
+  if (right.value === null) return right;
+  return left.value >= right.value ? left : right;
+}
+
+function capCandidate(raw, resolved, exclusive) {
   return {
-    raw: raw || (literal !== null ? String(literal) : null),
+    raw: raw || (resolved !== null ? String(resolved) : null),
     value: resolved === null ? null : (exclusive ? resolved - 1 : resolved),
   };
 }
@@ -449,11 +474,9 @@ function inferFeeScale(body, writes, stateVariables, constantValues) {
   let scale = null;
   walkAst(body, (node) => {
     if (node.nodeType !== 'BinaryOperation' || node.operator !== '/') return;
-    const denominatorName = referencedName(node.rightExpression);
-    const denominatorValue = literalValue(node.rightExpression) ?? (denominatorName ? constantValues.get(denominatorName) ?? null : null);
-    if (denominatorValue === HUNDRED_SCALE || denominatorValue === BPS_SCALE) {
-      scale = denominatorValue;
-    }
+    const denominatorValue = resolveNumericValue(node.rightExpression, constantValues);
+    if (!Number.isFinite(denominatorValue) || denominatorValue <= 1) return;
+    scale = scale === null ? denominatorValue : Math.max(scale, denominatorValue);
   });
 
   if (scale !== null) return scale;
@@ -533,16 +556,6 @@ function bodyContainsIdentifier(body, identifier) {
   return found;
 }
 
-function bodyContainsName(body, pattern) {
-  let found = false;
-  walkAst(body, (node) => {
-    if (found) return;
-    const name = node.name || node.memberName || modifierName(node) || null;
-    if (typeof name === 'string' && pattern.test(name)) found = true;
-  });
-  return found;
-}
-
 function inferGuardKinds(modifiers, body) {
   const kinds = new Set();
   const capture = (name) => {
@@ -579,10 +592,21 @@ function isMsgSender(node) {
 
 function literalValue(node) {
   if (!node || typeof node !== 'object') return null;
-  if (node.nodeType === 'Literal' && typeof node.value === 'string' && /^\d[\d_]*$/.test(node.value)) {
-    return Number.parseInt(node.value.replaceAll('_', ''), 10);
-  }
-  return null;
+  if (node.nodeType !== 'Literal' || node.kind !== 'number' || typeof node.value !== 'string') return null;
+  const normalized = node.value.replaceAll('_', '');
+  if (!/^(?:0[xX][0-9a-fA-F]+|\d+(?:[eE]\d+)?)$/.test(normalized)) return null;
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) return null;
+  return parsed;
+}
+
+function resolveNumericValue(node, constantValues) {
+  const literal = literalValue(node);
+  if (literal !== null) return literal;
+
+  const name = referencedName(node);
+  if (!name) return null;
+  return constantValues.get(name) ?? null;
 }
 
 function describeGuardType(hasModifier, hasInlineCheck) {
