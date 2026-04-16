@@ -323,7 +323,7 @@ function analyzeFunction({
   if (/^(transfer|transferFrom)$/i.test(name)) {
     tokenFeatures.transferFunctions.push({
       contract: contractName,
-      name,
+      function: name,
       file: fileName,
       line: location.line,
       modifiers,
@@ -332,7 +332,7 @@ function analyzeFunction({
       gatedByBlacklist: guardKinds.includes('blacklist'),
     });
   }
-  if (FEE_NAME_RE.test(name) && /^transfer$/i.test(name)) {
+  if (hasFeeOnTransferSignal(name, writes)) {
     tokenFeatures.feeOnTransferSignals.push(functionFeatureEntry(contractName, name, fileName, location.line));
   }
   if (PAUSE_NAME_RE.test(name) && /blacklist|blocklist|denylist/i.test(name)) {
@@ -375,7 +375,7 @@ function collectStateWrites(body, stateVariables) {
       const written = referencedName(node.leftHandSide);
       if (written && stateVariables.has(written)) writes.add(written);
     }
-    if (node.nodeType === 'UnaryOperation' && node.prefix === false) {
+    if (node.nodeType === 'UnaryOperation' && (node.operator === '++' || node.operator === '--')) {
       const written = referencedName(node.subExpression);
       if (written && stateVariables.has(written)) writes.add(written);
     }
@@ -386,58 +386,123 @@ function collectStateWrites(body, stateVariables) {
 
 function inferFeeCap(body, parameters, constantValues) {
   let best = null;
+  const captureBest = (candidate) => {
+    if (!candidate) return;
+    if (!best || (candidate.value !== null && (best.value === null || candidate.value < best.value))) {
+      best = candidate;
+    }
+  };
 
   walkAst(body, (node) => {
     if (node.nodeType !== 'FunctionCall' || referencedName(node.expression) !== 'require') return;
     const condition = node.arguments?.[0];
-    const candidate = capFromCondition(condition, parameters, constantValues);
-    if (!candidate) return;
-    if (!best || (candidate.value !== null && (best.value === null || candidate.value < best.value))) {
-      best = candidate;
-    }
+    captureBest(capFromCondition(condition, parameters, constantValues));
   });
 
   walkAst(body, (node) => {
     if (node.nodeType !== 'IfStatement') return;
-    const candidate = capFromCondition(node.condition, parameters, constantValues, true);
-    if (!candidate) return;
-    if (!best || (candidate.value !== null && (best.value === null || candidate.value < best.value))) {
-      best = candidate;
-    }
+    captureBest(capFromIfStatement(node, parameters, constantValues));
   });
 
   return best;
 }
 
+function capFromIfStatement(node, parameters, constantValues) {
+  const trueTerminates = statementAlwaysTerminates(node?.trueBody);
+  const falseTerminates = statementAlwaysTerminates(node?.falseBody);
+
+  if (trueTerminates === falseTerminates) return null;
+  if (trueTerminates) return capFromCondition(node.condition, parameters, constantValues, true);
+  return capFromCondition(node.condition, parameters, constantValues);
+}
+
+function statementAlwaysTerminates(node) {
+  if (!node || typeof node !== 'object') return false;
+
+  if (node.nodeType === 'Block' || node.nodeType === 'UncheckedBlock') {
+    const statements = node.statements || [];
+    if (statements.length === 0) return false;
+    return statementAlwaysTerminates(statements[statements.length - 1]);
+  }
+  if (node.nodeType === 'Return' || node.nodeType === 'RevertStatement' || node.nodeType === 'Throw') {
+    return true;
+  }
+  if (node.nodeType === 'IfStatement') {
+    return statementAlwaysTerminates(node.trueBody) && statementAlwaysTerminates(node.falseBody);
+  }
+  if (node.nodeType === 'ExpressionStatement') {
+    return isTerminatingExpression(node.expression);
+  }
+
+  return false;
+}
+
+function isTerminatingExpression(node) {
+  if (!node || typeof node !== 'object' || node.nodeType !== 'FunctionCall') return false;
+
+  const callee = referencedName(node.expression);
+  if (callee === 'revert') return true;
+  if ((callee === 'require' || callee === 'assert') && booleanLiteralValue(node.arguments?.[0]) === false) {
+    return true;
+  }
+
+  return false;
+}
+
 function capFromCondition(condition, parameters, constantValues, invert = false) {
-  if (!condition || condition.nodeType !== 'BinaryOperation') return null;
+  if (!condition || typeof condition !== 'object') return null;
+  if (condition.nodeType === 'BinaryOperation' && (condition.operator === '&&' || condition.operator === '||')) {
+    const left = capFromCondition(condition.leftExpression, parameters, constantValues, invert);
+    const right = capFromCondition(condition.rightExpression, parameters, constantValues, invert);
+    const effectiveOperator = invert
+      ? (condition.operator === '&&' ? '||' : '&&')
+      : condition.operator;
+    return effectiveOperator === '&&'
+      ? stricterCap(left, right)
+      : guaranteedCapAcrossBranches(left, right);
+  }
+  if (condition.nodeType !== 'BinaryOperation') return null;
   const left = referencedName(condition.leftExpression);
   const right = referencedName(condition.rightExpression);
-  const literalRight = literalValue(condition.rightExpression);
-  const literalLeft = literalValue(condition.leftExpression);
+  const literalRight = resolveNumericValue(condition.rightExpression, constantValues);
+  const literalLeft = resolveNumericValue(condition.leftExpression, constantValues);
 
   const leftIsParam = left && parameters.includes(left);
   const rightIsParam = right && parameters.includes(right);
 
   if (leftIsParam && (condition.operator === '<=' || condition.operator === '<')) {
-    return capCandidate(right, literalRight, constantValues, condition.operator === '<');
+    return capCandidate(right, literalRight, condition.operator === '<');
   }
   if (rightIsParam && (condition.operator === '>=' || condition.operator === '>')) {
-    return capCandidate(left, literalLeft, constantValues, condition.operator === '>');
+    return capCandidate(left, literalLeft, condition.operator === '>');
   }
   if (invert && leftIsParam && (condition.operator === '>' || condition.operator === '>=')) {
-    return capCandidate(right, literalRight, constantValues, condition.operator === '>=');
+    return capCandidate(right, literalRight, condition.operator === '>=');
   }
   if (invert && rightIsParam && (condition.operator === '<' || condition.operator === '<=')) {
-    return capCandidate(left, literalLeft, constantValues, condition.operator === '<=');
+    return capCandidate(left, literalLeft, condition.operator === '<=');
   }
   return null;
 }
 
-function capCandidate(raw, literal, constantValues, exclusive) {
-  const resolved = literal ?? (raw ? constantValues.get(raw) ?? null : null);
+function stricterCap(left, right) {
+  if (!left) return right;
+  if (!right) return left;
+  if (left.value === null) return right;
+  if (right.value === null) return left;
+  return left.value <= right.value ? left : right;
+}
+
+function guaranteedCapAcrossBranches(left, right) {
+  if (!left || !right) return null;
+  if (left.value === null) return left;
+  if (right.value === null) return right;
+  return left.value >= right.value ? left : right;
+}
+
+function capCandidate(raw, resolved, exclusive) {
   return {
-    raw: raw || (literal !== null ? String(literal) : null),
+    raw: raw || (resolved !== null ? String(resolved) : null),
     value: resolved === null ? null : (exclusive ? resolved - 1 : resolved),
   };
 }
@@ -449,11 +514,9 @@ function inferFeeScale(body, writes, stateVariables, constantValues) {
   let scale = null;
   walkAst(body, (node) => {
     if (node.nodeType !== 'BinaryOperation' || node.operator !== '/') return;
-    const denominatorName = referencedName(node.rightExpression);
-    const denominatorValue = literalValue(node.rightExpression) ?? (denominatorName ? constantValues.get(denominatorName) ?? null : null);
-    if (denominatorValue === HUNDRED_SCALE || denominatorValue === BPS_SCALE) {
-      scale = denominatorValue;
-    }
+    const denominatorValue = resolveNumericValue(node.rightExpression, constantValues);
+    if (!Number.isFinite(denominatorValue) || denominatorValue <= 1) return;
+    scale = scale === null ? denominatorValue : Math.max(scale, denominatorValue);
   });
 
   if (scale !== null) return scale;
@@ -475,6 +538,11 @@ function determineHundredPercent(cap, scale) {
   if (!cap) return true;
   if (cap.value === null) return null;
   return cap.value >= scale;
+}
+
+function hasFeeOnTransferSignal(name, writes) {
+  if (!/^(_transfer|_update|transfer|transferFrom)$/i.test(name)) return false;
+  return writes.some((written) => FEE_NAME_RE.test(written) && !FEE_DESTINATION_RE.test(written));
 }
 
 function hasInlineSenderCheck(body, stateVariables) {
@@ -533,16 +601,6 @@ function bodyContainsIdentifier(body, identifier) {
   return found;
 }
 
-function bodyContainsName(body, pattern) {
-  let found = false;
-  walkAst(body, (node) => {
-    if (found) return;
-    const name = node.name || node.memberName || modifierName(node) || null;
-    if (typeof name === 'string' && pattern.test(name)) found = true;
-  });
-  return found;
-}
-
 function inferGuardKinds(modifiers, body) {
   const kinds = new Set();
   const capture = (name) => {
@@ -555,10 +613,22 @@ function inferGuardKinds(modifiers, body) {
 
   for (const modifier of modifiers) capture(modifier);
   walkAst(body, (node) => {
-    capture(node.name || node.memberName || modifierName(node) || null);
+    if (node.nodeType === 'FunctionCall' && referencedName(node.expression) === 'require') {
+      captureNamesInCondition(node.arguments?.[0], capture);
+    }
+    if (node.nodeType === 'IfStatement') {
+      captureNamesInCondition(node.condition, capture);
+    }
   });
 
   return [...kinds];
+}
+
+function captureNamesInCondition(node, capture) {
+  if (!node || typeof node !== 'object') return;
+  walkAst(node, (child) => {
+    capture(child.name || child.memberName || null);
+  });
 }
 
 function referencedName(node) {
@@ -579,9 +649,28 @@ function isMsgSender(node) {
 
 function literalValue(node) {
   if (!node || typeof node !== 'object') return null;
-  if (node.nodeType === 'Literal' && typeof node.value === 'string' && /^\d[\d_]*$/.test(node.value)) {
-    return Number.parseInt(node.value.replaceAll('_', ''), 10);
-  }
+  if (node.nodeType !== 'Literal' || node.kind !== 'number' || typeof node.value !== 'string') return null;
+  const normalized = node.value.replaceAll('_', '');
+  if (!/^(?:0[xX][0-9a-fA-F]+|\d+(?:[eE]\d+)?)$/.test(normalized)) return null;
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) return null;
+  return parsed;
+}
+
+function resolveNumericValue(node, constantValues) {
+  const literal = literalValue(node);
+  if (literal !== null) return literal;
+
+  const name = referencedName(node);
+  if (!name) return null;
+  return constantValues.get(name) ?? null;
+}
+
+function booleanLiteralValue(node) {
+  if (!node || typeof node !== 'object') return null;
+  if (node.nodeType !== 'Literal' || node.kind !== 'bool' || typeof node.value !== 'string') return null;
+  if (node.value === 'true') return true;
+  if (node.value === 'false') return false;
   return null;
 }
 
@@ -655,7 +744,7 @@ function tokenFeatureEntry(contract, variable, file) {
 }
 
 function functionFeatureEntry(contract, name, file, line) {
-  return { contract, name, file, line };
+  return { contract, function: name, file, line };
 }
 
 function pushTokenFeatures(target, source) {
@@ -678,13 +767,24 @@ function dedupeArray(items) {
   const deduped = [];
 
   for (const item of items) {
-    const key = JSON.stringify(item);
+    const key = stableSerialize(item);
     if (seen.has(key)) continue;
     seen.add(key);
     deduped.push(item);
   }
 
   return deduped;
+}
+
+function stableSerialize(value) {
+  if (value === undefined) return 'undefined';
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map((entry) => stableSerialize(entry)).join(',')}]`;
+
+  return `{${Object.keys(value)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableSerialize(value[key])}`)
+    .join(',')}}`;
 }
 
 export const __internal = Object.freeze({

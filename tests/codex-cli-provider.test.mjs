@@ -62,3 +62,33 @@ test('runCodexCli captures the final item.completed payload from a live stdout s
 
   assert.deepEqual(result, { ok: true, text: '{"ok":true}' });
 });
+
+test('runCodexCli escalates to SIGKILL when the child ignores SIGTERM', async () => {
+  const signals = [];
+  const child = new EventEmitter();
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.stdout.setEncoding = () => {};
+  child.stderr.setEncoding = () => {};
+  child.stdin = { end() {} };
+  child.kill = (signal) => {
+    signals.push(signal);
+  };
+
+  const spawn = () => child;
+
+  const result = await __internal.runCodexCli({
+    spawn,
+    cwd: process.cwd(),
+    timeoutMs: 5,
+    schemaPath: '/tmp/schema.json',
+    model: 'gpt-5.3-codex',
+    prompt: 'Return JSON',
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 2_050));
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'TIMEOUT');
+  assert.deepEqual(signals, ['SIGTERM', 'SIGKILL']);
+});

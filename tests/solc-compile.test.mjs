@@ -113,12 +113,12 @@ test('buildStandardJsonInput produces standard-json compiler input', () => {
 
 test('collectMissingImportPaths normalizes unresolved import paths', () => {
   const paths = __internal.collectMissingImportPaths([
-    { message: 'Source "./interfaces/IAntseedRegistry.sol" not found: File import callback not supported' },
+    { message: 'Source "./interfaces/IRegistry.sol" not found: File import callback not supported' },
     { message: 'Source "@openzeppelin/contracts/access/Ownable.sol" not found: File import callback not supported' },
   ]);
 
   assert.deepEqual(paths, [
-    'interfaces/IAntseedRegistry.sol',
+    'interfaces/IRegistry.sol',
     '@openzeppelin/contracts/access/Ownable.sol',
   ]);
 });

@@ -67,6 +67,89 @@ test('extracts mutable parameters and fee controls', () => {
   assert.equal(feeControl.setters[0].capValue, 1000);
 });
 
+test('extracts arbitrary fee scales from setter expressions', () => {
+  const facts = compileFacts(`
+    pragma solidity 0.8.20;
+    contract Vault {
+      uint256 public fee;
+      uint256 public constant WAD = 1e18;
+
+      function setFee(uint256 value) external {
+        fee = value / WAD;
+      }
+    }
+  `);
+
+  const feeControl = facts.feeControls.find((entry) => entry.variable === 'fee');
+  assert.ok(feeControl);
+  assert.equal(feeControl.setters[0].scale, 1e18);
+});
+
+test('extracts fee caps from conjunction conditions', () => {
+  const facts = compileFacts(`
+    pragma solidity 0.8.20;
+    contract Vault {
+      uint256 public feeBps;
+      uint256 public constant MAX_FEE_BPS = 1_000;
+
+      function setFee(uint256 value) external {
+        require(value <= MAX_FEE_BPS && value >= 0, "cap");
+        feeBps = value;
+      }
+    }
+  `);
+
+  const feeControl = facts.feeControls.find((entry) => entry.variable === 'feeBps');
+  assert.ok(feeControl);
+  assert.equal(feeControl.setters[0].capRaw, 'MAX_FEE_BPS');
+  assert.equal(feeControl.setters[0].capValue, 1000);
+});
+
+test('extracts fee caps from terminating if guards', () => {
+  const facts = compileFacts(`
+    pragma solidity 0.8.20;
+    contract Vault {
+      uint256 public feeBps;
+      uint256 public constant MAX_FEE_BPS = 1_000;
+
+      function setFee(uint256 value) external {
+        if (value > MAX_FEE_BPS) {
+          revert();
+        }
+        feeBps = value;
+      }
+    }
+  `);
+
+  const feeControl = facts.feeControls.find((entry) => entry.variable === 'feeBps');
+  assert.ok(feeControl);
+  assert.equal(feeControl.setters[0].capRaw, 'MAX_FEE_BPS');
+  assert.equal(feeControl.setters[0].capValue, 1000);
+});
+
+test('does not infer fee caps from non-terminating if branches', () => {
+  const facts = compileFacts(`
+    pragma solidity 0.8.20;
+    contract Vault {
+      event CapObserved(uint256 value);
+      uint256 public feeBps;
+      uint256 public constant MAX_FEE_BPS = 1_000;
+
+      function setFee(uint256 value) external {
+        if (value > MAX_FEE_BPS) {
+          emit CapObserved(value);
+        }
+        feeBps = value;
+      }
+    }
+  `);
+
+  const feeControl = facts.feeControls.find((entry) => entry.variable === 'feeBps');
+  assert.ok(feeControl);
+  assert.equal(feeControl.setters[0].capRaw, null);
+  assert.equal(feeControl.setters[0].capValue, null);
+});
+
 test('extracts upgrade path facts', () => {
   const facts = compileFacts(`
     pragma solidity 0.8.20;
@@ -126,10 +209,45 @@ test('extracts token feature facts', () => {
     }
   `);
 
-  assert.ok(facts.tokenFeatures.mintFunctions.some((entry) => entry.name === 'mint'));
-  assert.ok(facts.tokenFeatures.burnFunctions.some((entry) => entry.name === 'burn'));
-  assert.ok(facts.tokenFeatures.transferHooks.some((entry) => entry.name === '_transfer'));
+  assert.ok(facts.tokenFeatures.mintFunctions.some((entry) => entry.function === 'mint'));
+  assert.ok(facts.tokenFeatures.burnFunctions.some((entry) => entry.function === 'burn'));
+  assert.ok(facts.tokenFeatures.transferHooks.some((entry) => entry.function === '_transfer'));
   assert.ok(facts.tokenFeatures.blacklistControls.length > 0);
   assert.ok(facts.tokenFeatures.tradingToggles.some((entry) => entry.name === 'tradingEnabled'));
   assert.ok(facts.tokenFeatures.maxLimits.some((entry) => entry.name === 'maxWallet'));
+});
+
+test('detects fee-on-transfer signals from transfer writes and prefix unary operations', () => {
+  const facts = compileFacts(`
+    pragma solidity 0.8.20;
+    contract Token {
+      uint256 public feeCounter;
+
+      function transfer(address to, uint256 amount) external returns (bool) {
+        ++feeCounter;
+        return true;
+      }
+    }
+  `);
+
+  assert.ok(facts.mutableParameters.some((entry) => entry.function === 'transfer' && entry.writes.includes('feeCounter')));
+  assert.ok(facts.tokenFeatures.feeOnTransferSignals.some((entry) => entry.function === 'transfer'));
+});
+
+test('does not infer pause guards from pause-like event names alone', () => {
+  const facts = compileFacts(`
+    pragma solidity 0.8.20;
+    contract Vault {
+      event PausedEvent();
+
+      function withdraw(uint256 amount) external {
+        emit PausedEvent();
+      }
+    }
+  `);
+
+  const exit = facts.userExitFunctions.find((entry) => entry.function === 'withdraw');
+  assert.ok(exit);
+  assert.equal(exit.gatedByPause, false);
+  assert.deepEqual(exit.guardKinds, []);
 });

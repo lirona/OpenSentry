@@ -3,13 +3,21 @@ import { extractSolidityFacts } from './solidity-facts.js';
 import { deriveDeterministicFindings } from './deterministic-findings.js';
 
 export function runCompilerFactsStage(sourceResult) {
+  return runCompilerFactsStageWithDependencies(sourceResult);
+}
+
+function runCompilerFactsStageWithDependencies(sourceResult, dependencies = {}) {
   if (!sourceResult || typeof sourceResult !== 'object') {
     throw new TypeError('runCompilerFactsStage: sourceResult must be an object');
   }
 
+  const compileSource = dependencies.compileSource || compileSourceWithBundledSolc;
+  const extractFacts = dependencies.extractFacts || extractSolidityFacts;
+  const deriveFindings = dependencies.deriveFindings || deriveDeterministicFindings;
+
   let compiled;
   try {
-    compiled = compileSourceWithBundledSolc(sourceResult);
+    compiled = compileSource(sourceResult);
   } catch (error) {
     return {
       factsStage: {
@@ -43,21 +51,26 @@ export function runCompilerFactsStage(sourceResult) {
     };
   }
 
-  if (!hasAstForAllRequestedFiles(compiled.compilerOutput, sourceResult.files || [])) {
+  const requestedFiles = sourceResult.files || [];
+  const partition = partitionRequestedFilesByAst(compiled.compilerOutput, requestedFiles);
+  if (partition.analyzableFiles.length === 0) {
     return {
       factsStage: {
         ...base,
-        status: 'compile_error',
+        status: 'no_analyzable_files',
         reason: 'missing_requested_asts',
+        coverage: 'none',
+        analyzedFiles: [],
+        missingAstFiles: partition.missingAstFiles,
       },
       deterministicFindings: [],
     };
   }
 
   try {
-    const facts = extractSolidityFacts({
-      compilerOutput: compiled.compilerOutput,
-      files: sourceResult.files || [],
+    const facts = extractFacts({
+      compilerOutput: filterCompilerOutputToFiles(compiled.compilerOutput, partition.analyzableFiles),
+      files: partition.analyzableFiles,
     });
 
     return {
@@ -65,9 +78,12 @@ export function runCompilerFactsStage(sourceResult) {
         ...base,
         status: 'ok',
         reason: null,
+        coverage: partition.missingAstFiles.length === 0 ? 'full' : 'partial',
+        analyzedFiles: partition.analyzableFiles.map((file) => file.name),
+        missingAstFiles: partition.missingAstFiles,
         facts,
       },
-      deterministicFindings: deriveDeterministicFindings(facts),
+      deterministicFindings: deriveFindings(facts),
     };
   } catch (error) {
     return {
@@ -83,19 +99,39 @@ export function runCompilerFactsStage(sourceResult) {
   }
 }
 
-function hasAstForAllRequestedFiles(compilerOutput, files) {
-  if (!compilerOutput || typeof compilerOutput !== 'object') return false;
-  if (!Array.isArray(files) || files.length === 0) return false;
+function partitionRequestedFilesByAst(compilerOutput, files) {
+  const analyzableFiles = [];
+  const missingAstFiles = [];
 
-  for (const file of files) {
+  for (const file of files || []) {
     const fileName = file?.name;
-    if (typeof fileName !== 'string' || fileName.length === 0) return false;
-    if (!compilerOutput.sources?.[fileName]?.ast) return false;
+    if (typeof fileName !== 'string' || fileName.length === 0) continue;
+    if (compilerOutput?.sources?.[fileName]?.ast) {
+      analyzableFiles.push(file);
+      continue;
+    }
+    missingAstFiles.push(fileName);
   }
 
-  return true;
+  return {
+    analyzableFiles,
+    missingAstFiles,
+  };
+}
+
+function filterCompilerOutputToFiles(compilerOutput, files) {
+  return {
+    ...compilerOutput,
+    sources: Object.fromEntries(
+      (files || [])
+        .map((file) => [file.name, compilerOutput.sources?.[file.name]])
+        .filter(([, source]) => source?.ast),
+    ),
+  };
 }
 
 export const __internal = Object.freeze({
-  hasAstForAllRequestedFiles,
+  runCompilerFactsStageWithDependencies,
+  partitionRequestedFilesByAst,
+  filterCompilerOutputToFiles,
 });

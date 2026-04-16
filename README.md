@@ -45,17 +45,17 @@ OpenSentry does not ship with shared provider credentials.
 If you want to run the project, you must use your own model-provider setup:
 
 - For API-backed providers, set your own `AI_API_KEY`.
-- For `codex-cli`, use your own local Codex CLI installation and authenticated session, without having to set `AI_API_KEY`.
+- For `codex-cli` and `claude-cli`, use your own local CLI installation and authenticated session, without having to set `AI_API_KEY`.
 
 
 Edit `.dev.vars` and fill in your keys:
 
 | Variable | Where to get it |
 |----------|----------------|
-| `AI_PROVIDER` | Model provider. Supported: `gemini`, `claude`, `codex`, or `codex-cli`. Defaults to `gemini` if omitted |
-| `AI_API_KEY` | API key for the configured model provider |
+| `AI_PROVIDER` | Model provider. Supported: `gemini`, `claude`, `codex`, `codex-cli`, or `claude-cli`. Defaults to `gemini` if omitted |
+| `AI_API_KEY` | API key for API-backed providers |
 | `AI_MODEL` | Model ID to use. Change this in env vars instead of code |
-| `AI_TOTAL_BUDGET_MS` | Optional per-agent total timeout override in milliseconds. Useful for slower local providers like `codex-cli` |
+| `AI_TOTAL_BUDGET_MS` | Optional per-agent total timeout override in milliseconds. Useful for slower local providers like `codex-cli` or `claude-cli` |
 | `AI_PER_ATTEMPT_TIMEOUT_MS` | Optional per-attempt timeout override in milliseconds |
 | `AI_AGENT_CONCURRENCY` | Optional model-call concurrency. Defaults to `1` for free-tier friendliness |
 | `ANALYZE_IP_COOLDOWN_MS` | Optional per-IP cooldown in milliseconds. Set `0` to disable |
@@ -99,7 +99,7 @@ npm run cli -- analyze --file ./contracts/Vault.sol --json
 npm run cli -- analyze --path ./contracts --out ./report.json --trace-dir ./.opensentry-trace
 ```
 
-The CLI uses the same `AI_PROVIDER`, `AI_API_KEY`, and `AI_MODEL` environment variables as the API-backed flow.
+The CLI uses the same `AI_PROVIDER`, `AI_API_KEY`, and `AI_MODEL` environment variables as the API-backed flow. `AI_API_KEY` is only required for API-backed providers.
 
 Example Codex/OpenAI setup:
 
@@ -117,10 +117,19 @@ npm run cli -- analyze --file ./contracts/Vault.sol --trace-dir ./.opensentry-tr
 
 `codex-cli` uses the locally installed `codex` binary and your existing Codex CLI login session instead of direct OpenAI API billing.
 
-By default, `codex-cli` gets a much larger local timeout budget than the API-backed providers. You can override it explicitly, for example:
+Example local Claude Code setup with a personal Claude Code login session:
 
 ```bash
-AI_PROVIDER=codex-cli AI_MODEL=gpt-5.3-codex AI_TOTAL_BUDGET_MS=600000 AI_PER_ATTEMPT_TIMEOUT_MS=600000 \
+AI_PROVIDER=claude-cli AI_MODEL=sonnet \
+npm run cli -- analyze --file ./contracts/Vault.sol --trace-dir ./.opensentry-trace
+```
+
+`claude-cli` uses the locally installed `claude` binary and your existing Claude Code login session instead of direct Anthropic API billing.
+
+By default, `codex-cli` and `claude-cli` get a much larger local timeout budget than the API-backed providers. You can override it explicitly, for example:
+
+```bash
+AI_PROVIDER=claude-cli AI_MODEL=sonnet AI_TOTAL_BUDGET_MS=600000 AI_PER_ATTEMPT_TIMEOUT_MS=600000 \
 npm run cli -- analyze --file ./contracts/Vault.sol --trace-dir ./.opensentry-trace
 ```
 

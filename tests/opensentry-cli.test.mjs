@@ -268,6 +268,55 @@ test('CLI can run end-to-end with the codex-cli provider without AI_API_KEY', { 
   assert.equal(merged.overallSeverity, 'SAFE');
 });
 
+test('CLI can run end-to-end with the claude-cli provider without AI_API_KEY', { concurrency: false }, async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'opensentry-cli-'));
+  const filePath = path.join(tmpDir, 'Vault.sol');
+  const traceDir = path.join(tmpDir, 'trace');
+
+  await writeFile(filePath, 'pragma solidity 0.8.20;\ncontract Vault {}', 'utf8');
+
+  let calls = 0;
+  const stdout = makeBuffer();
+  const stderr = makeBuffer();
+
+  const exitCode = await runCli(
+    ['analyze', '--file', filePath, '--json', '--trace-dir', traceDir],
+    {
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      env: {
+        AI_PROVIDER: 'claude-cli',
+        AI_MODEL: 'sonnet',
+        __CLAUDE_CLI_RUNNER: async ({ systemPrompt, userMessage }) => {
+          calls++;
+          assert.match(systemPrompt, /Access Control|Token Mechanics|Governance/);
+          assert.match(userMessage, /--- CONTRACT SOURCE CODE/);
+          return {
+            ok: true,
+            text: JSON.stringify({
+              agent: 'Access Control',
+              severity: 'SAFE',
+              summary: 'No issues found.',
+              findings: [],
+            }),
+          };
+        },
+      },
+    },
+  );
+
+  assert.equal(exitCode, 0);
+  assert.equal(stderr.read(), '');
+  assert.equal(calls, 8);
+
+  const body = JSON.parse(stdout.read());
+  assert.equal(body.success, true);
+  assert.equal(body.analysis.report.overallSeverity, 'SAFE');
+
+  const merged = JSON.parse(await readFile(path.join(traceDir, 'merged-report.json'), 'utf8'));
+  assert.equal(merged.overallSeverity, 'SAFE');
+});
+
 test('CLI rejects missing analyze target flags', { concurrency: false }, async () => {
   const stdout = makeBuffer();
   const stderr = makeBuffer();
@@ -378,4 +427,5 @@ test('CLI help prints usage and exits successfully', { concurrency: false }, asy
   assert.equal(exitCode, 0);
   assert.equal(stderr.read(), '');
   assert.match(stdout.read(), /Usage:/);
+  assert.match(stdout.read(), /claude-cli/);
 });

@@ -16,15 +16,16 @@
 //     { ok: false, key, error: { code, message, httpStatus?, finishReason?,
 //                                blockReason? }, attempts }
 //
-// Programming-bug cases (missing key, missing env.AI_API_KEY, missing
-// env.AI_MODEL, missing required metadata, empty source) throw synchronously
-// so they surface loudly during development instead of masquerading as agent
-// failures.
+// Programming-bug cases (missing key, missing env.AI_MODEL, missing
+// env.AI_API_KEY for API-backed providers, missing required metadata, empty
+// source) throw synchronously so they surface loudly during development
+// instead of masquerading as agent failures.
 
 import { createGeminiProvider, GEMINI_BASE_URL } from './model-providers/gemini.js';
 import { createClaudeProvider, CLAUDE_API_URL, CLAUDE_API_VERSION } from './model-providers/claude.js';
 import { createCodexProvider, CODEX_API_URL } from './model-providers/codex.js';
 import { createCodexCliProvider, CODEX_CLI_BINARY } from './model-providers/codex-cli.js';
+import { createClaudeCliProvider, CLAUDE_CLI_BINARY } from './model-providers/claude-cli.js';
 
 // Total wall-clock budget per agent, shared across attempts. The 30s Pages
 // Functions limit minus a 5s orchestrator margin.
@@ -98,7 +99,8 @@ const RETRYABLE_CODES = new Set([
  *                                "(unknown)" so a sparse response from the
  *                                source fetcher doesn't crash the runner.
  * @param {object} env            Cloudflare Pages Functions env. Must include
- *                                AI_API_KEY and AI_MODEL.
+ *                                AI_MODEL, plus AI_API_KEY for API-backed
+ *                                providers.
  * @returns {Promise<object>}     Uniform result object (see file header).
  */
 export async function runAgent(key, systemPrompt, source, metadata, env, analysisContext = {}) {
@@ -247,6 +249,7 @@ function getModelProvider(env) {
   if (providerName === 'claude') return createClaudeProvider();
   if (providerName === 'codex') return createCodexProvider();
   if (providerName === 'codex-cli') return createCodexCliProvider();
+  if (providerName === 'claude-cli') return createClaudeCliProvider();
   throw new Error(`runAgent: unsupported AI_PROVIDER "${providerName}"`);
 }
 
@@ -412,6 +415,7 @@ export const __internal = Object.freeze({
   REQUEST_CONFIG,
   CLAUDE_API_URL,
   CLAUDE_API_VERSION,
+  CLAUDE_CLI_BINARY,
   CODEX_API_URL,
   CODEX_CLI_BINARY,
 });
