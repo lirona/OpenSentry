@@ -423,6 +423,69 @@ test('infers guard kinds from standalone helper calls with guard-helper prefixes
   assert.equal(upgrade.hasVisibleTimelock, true);
 });
 
+test('infers guard kinds from member-access helper calls with guard-helper prefixes', () => {
+  const facts = compileFacts(`
+    pragma solidity 0.8.20;
+
+    library GuardLib {
+      function _requireNotPaused(bool paused) internal pure {
+        require(!paused, "paused");
+      }
+
+      function _checkBlacklist(bool blocked) internal pure {
+        require(!blocked, "blocked");
+      }
+
+      function _enforceDelay(bool delayActive) internal pure {
+        require(delayActive, "delay");
+      }
+
+      function pauseAndBurn() internal pure {}
+    }
+
+    contract Vault {
+      bool public paused;
+      mapping(address => bool) public blacklist;
+      bool public timelockActive;
+
+      function withdraw(uint256 amount) external {
+        GuardLib._requireNotPaused(paused);
+      }
+
+      function transfer(address to, uint256 amount) external returns (bool) {
+        GuardLib._checkBlacklist(blacklist[msg.sender]);
+        return true;
+      }
+
+      function upgradeTo(address implementation) external {
+        GuardLib._enforceDelay(timelockActive);
+      }
+
+      function claim(uint256 amount) external {
+        GuardLib.pauseAndBurn();
+      }
+    }
+  `);
+
+  const withdraw = facts.userExitFunctions.find((entry) => entry.function === 'withdraw');
+  assert.ok(withdraw);
+  assert.equal(withdraw.gatedByPause, true);
+  assert.ok(withdraw.guardKinds.includes('pause'));
+
+  const transfer = facts.tokenFeatures.transferFunctions.find((entry) => entry.function === 'transfer');
+  assert.ok(transfer);
+  assert.equal(transfer.gatedByBlacklist, true);
+  assert.ok(transfer.guardKinds.includes('blacklist'));
+
+  const upgrade = facts.upgradePaths.find((entry) => entry.function === 'upgradeTo');
+  assert.ok(upgrade);
+  assert.equal(upgrade.hasVisibleTimelock, true);
+
+  const claim = facts.userExitFunctions.find((entry) => entry.function === 'claim');
+  assert.ok(claim);
+  assert.deepEqual(claim.guardKinds, []);
+});
+
 test('does not infer guard kinds from bare action calls with pause-like names', () => {
   const facts = compileFacts(`
     pragma solidity 0.8.20;
