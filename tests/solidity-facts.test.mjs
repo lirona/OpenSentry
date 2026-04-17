@@ -82,7 +82,8 @@ test('extracts explicit fee scales from setter expressions', () => {
 
   const feeControl = facts.feeControls.find((entry) => entry.variable === 'fee');
   assert.ok(feeControl);
-  assert.equal(feeControl.setters[0].scale, 1e18);
+  assert.equal(feeControl.setters[0].scale, null);
+  assert.equal(feeControl.setters[0].scaleExact, '1000000000000000000');
 });
 
 test('does not infer fee scales from arbitrary denominators', () => {
@@ -156,6 +157,27 @@ test('extracts fee caps from conjunction conditions', () => {
   assert.ok(feeControl);
   assert.equal(feeControl.setters[0].capRaw, 'MAX_FEE_BPS');
   assert.equal(feeControl.setters[0].capValue, 1000);
+});
+
+test('preserves exact cap values that exceed the safe integer range', () => {
+  const facts = compileFacts(`
+    pragma solidity 0.8.20;
+    contract Vault {
+      uint256 public fee;
+      uint256 public constant MAX_FEE = 123456789123456789;
+
+      function setFee(uint256 value) external {
+        require(value <= MAX_FEE, "cap");
+        fee = value / 10_000;
+      }
+    }
+  `);
+
+  const feeControl = facts.feeControls.find((entry) => entry.variable === 'fee');
+  assert.ok(feeControl);
+  assert.equal(feeControl.setters[0].capRaw, 'MAX_FEE');
+  assert.equal(feeControl.setters[0].capValue, null);
+  assert.equal(feeControl.setters[0].capValueExact, '123456789123456789');
 });
 
 test('extracts exclusive fee caps from require conditions', () => {
@@ -351,10 +373,92 @@ test('does not infer pause guards from pause-like event names alone', () => {
   assert.deepEqual(exit.guardKinds, []);
 });
 
+test('infers guard kinds from standalone helper calls with guard-helper prefixes', () => {
+  const facts = compileFacts(`
+    pragma solidity 0.8.20;
+    contract Vault {
+      bool public paused;
+      mapping(address => bool) public blacklist;
+      bool public timelockActive;
+
+      function withdraw(uint256 amount) external {
+        _requireNotPaused();
+      }
+
+      function transfer(address to, uint256 amount) external returns (bool) {
+        _checkBlacklist(msg.sender);
+        return true;
+      }
+
+      function upgradeTo(address implementation) external {
+        _enforceDelay();
+      }
+
+      function _requireNotPaused() internal view {
+        require(!paused, "paused");
+      }
+
+      function _checkBlacklist(address user) internal view {
+        require(!blacklist[user], "blocked");
+      }
+
+      function _enforceDelay() internal view {
+        require(timelockActive, "delay");
+      }
+    }
+  `);
+
+  const exit = facts.userExitFunctions.find((entry) => entry.function === 'withdraw');
+  assert.ok(exit);
+  assert.equal(exit.gatedByPause, true);
+  assert.ok(exit.guardKinds.includes('pause'));
+
+  const transfer = facts.tokenFeatures.transferFunctions.find((entry) => entry.function === 'transfer');
+  assert.ok(transfer);
+  assert.equal(transfer.gatedByBlacklist, true);
+  assert.ok(transfer.guardKinds.includes('blacklist'));
+
+  const upgrade = facts.upgradePaths.find((entry) => entry.function === 'upgradeTo');
+  assert.ok(upgrade);
+  assert.equal(upgrade.hasVisibleTimelock, true);
+});
+
+test('does not infer guard kinds from bare action calls with pause-like names', () => {
+  const facts = compileFacts(`
+    pragma solidity 0.8.20;
+    contract Vault {
+      function withdraw(uint256 amount) external {
+        pauseAndBurn();
+      }
+
+      function pauseAndBurn() internal {}
+    }
+  `);
+
+  const exit = facts.userExitFunctions.find((entry) => entry.function === 'withdraw');
+  assert.ok(exit);
+  assert.deepEqual(exit.guardKinds, []);
+});
+
 test('booleanLiteralValue accepts string and boolean AST values', () => {
   assert.equal(__internal.booleanLiteralValue({ nodeType: 'Literal', kind: 'bool', value: 'true' }), true);
   assert.equal(__internal.booleanLiteralValue({ nodeType: 'Literal', kind: 'bool', value: 'false' }), false);
   assert.equal(__internal.booleanLiteralValue({ nodeType: 'Literal', kind: 'bool', value: true }), true);
   assert.equal(__internal.booleanLiteralValue({ nodeType: 'Literal', kind: 'bool', value: false }), false);
   assert.equal(__internal.booleanLiteralValue({ nodeType: 'Literal', kind: 'number', value: '1' }), null);
+});
+
+test('literalValue parses exact integer literals without precision loss', () => {
+  assert.equal(
+    __internal.literalValue({ nodeType: 'Literal', kind: 'number', value: '123456789123456789' }),
+    123456789123456789n,
+  );
+  assert.equal(
+    __internal.literalValue({ nodeType: 'Literal', kind: 'number', value: '1e18' }),
+    1000000000000000000n,
+  );
+  assert.equal(
+    __internal.literalValue({ nodeType: 'Literal', kind: 'number', value: '0x10' }),
+    16n,
+  );
 });

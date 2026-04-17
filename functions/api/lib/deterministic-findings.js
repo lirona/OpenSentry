@@ -1,3 +1,5 @@
+import { stableSerialize } from './stable-serialize.js';
+
 const SEVERITY_RANK = Object.freeze({
   INFO: 1,
   WARNING: 2,
@@ -42,9 +44,11 @@ function deriveFeeFindings(facts) {
 }
 
 function classifyFeeSetter(control, setter) {
-  if (!Number.isFinite(setter?.scale) || setter.scale <= 0) return null;
+  const scaleExact = exactIntegerValue(setter?.scale, setter?.scaleExact);
+  if (scaleExact === null || scaleExact <= 0n) return null;
+  const capExact = exactIntegerValue(setter?.capValue, setter?.capValueExact);
 
-  if (setter.capValue === null && setter.canReach100Percent === true) {
+  if (capExact === null && setter.canReach100Percent === true) {
     return finding({
       ruleId: 'fee-uncapped-100',
       severity: 'CRITICAL',
@@ -53,13 +57,13 @@ function classifyFeeSetter(control, setter) {
       summary: `${control.variable} is configurable without a visible cap and can reach 100% of the fee scale.`,
       detail:
         `${control.contract}.${setter.function} updates ${control.variable} without a visible maximum. ` +
-        `The extracted fee scale is ${describeScale(setter.scale)}, so a full-value fee remains reachable.`,
+        `The extracted fee scale is ${describeScale(scaleExact)}, so a full-value fee remains reachable.`,
       userImpact:
         'Users could lose all of the transferred, deposited, redeemed, or withdrawn value to fees if that setting is raised to the maximum.',
     });
   }
 
-  if (Number.isFinite(setter.capValue) && setter.capValue >= setter.scale) {
+  if (capExact !== null && capExact >= scaleExact) {
     return finding({
       ruleId: 'fee-cap-at-least-100',
       severity: 'CRITICAL',
@@ -67,14 +71,14 @@ function classifyFeeSetter(control, setter) {
       check: 'Fee cap still allows 100%',
       summary: `${control.variable} has a visible cap, but that cap still allows a 100% fee.`,
       detail:
-        `${control.contract}.${setter.function} limits ${control.variable} with ${setter.capRaw || setter.capValue}, ` +
-        `which resolves to ${setter.capValue} on a ${describeScale(setter.scale)} scale.`,
+        `${control.contract}.${setter.function} limits ${control.variable} with ${setter.capRaw || describeExactValue(capExact)}, ` +
+        `which resolves to ${describeExactValue(capExact)} on a ${describeScale(scaleExact)} scale.`,
       userImpact:
         'The contract still permits a fee level that can consume the entire user amount, even though a maximum exists.',
     });
   }
 
-  if (Number.isFinite(setter.capValue) && setter.capValue > setter.scale / 2) {
+  if (capExact !== null && capExact > scaleExact / 2n) {
     return finding({
       ruleId: 'fee-cap-over-50',
       severity: 'WARNING',
@@ -82,8 +86,8 @@ function classifyFeeSetter(control, setter) {
       check: 'Fee cap exceeds 50%',
       summary: `${control.variable} is capped, but the visible maximum is still above 50%.`,
       detail:
-        `${control.contract}.${setter.function} limits ${control.variable} to ${setter.capRaw || setter.capValue}, ` +
-        `which resolves to ${setter.capValue} on a ${describeScale(setter.scale)} scale.`,
+        `${control.contract}.${setter.function} limits ${control.variable} to ${setter.capRaw || describeExactValue(capExact)}, ` +
+        `which resolves to ${describeExactValue(capExact)} on a ${describeScale(scaleExact)} scale.`,
       userImpact:
         'A fee setting that high can remove a majority of user value even if the contract does not allow the full 100%.',
     });
@@ -150,7 +154,7 @@ function derivePrivilegedSupplyFindings(facts) {
   for (const [contract, group] of Object.entries(groupBy(privilegedMints, (entry) => entry.contract))) {
     findings.push(finding({
       ruleId: 'privileged-mint',
-      severity: 'INFO',
+      severity: 'WARNING',
       location: formatLocation(group[0].file, group[0].line),
       check: 'Privileged mint path',
       summary: `${contract} exposes a privileged mint function that can increase supply.`,
@@ -223,9 +227,9 @@ function finding({ ruleId, severity, location, check, summary, detail, userImpac
 }
 
 function describeScale(scale) {
-  if (scale === 10_000) return '10,000 basis points';
-  if (scale === 100) return '100 percentage points';
-  return `${scale} units`;
+  if (scale === 10_000n) return '10,000 basis points';
+  if (scale === 100n) return '100 percentage points';
+  return `${scale.toString()} units`;
 }
 
 function describeFunctionList(entries) {
@@ -270,13 +274,25 @@ function dedupeFindings(findings) {
 }
 
 function dedupeFindingKey(finding) {
-  return [
-    finding?.ruleId || '',
-    finding?.location || '',
-    finding?.check || '',
-  ]
-    .map((part) => `${part.length}:${part}`)
-    .join('|');
+  return stableSerialize({
+    check: finding?.check || '',
+    location: finding?.location || '',
+    ruleId: finding?.ruleId || '',
+  });
+}
+
+function exactIntegerValue(numberValue, exactValue) {
+  if (typeof exactValue === 'string' && /^-?\d+$/.test(exactValue)) {
+    return BigInt(exactValue);
+  }
+  if (Number.isSafeInteger(numberValue)) {
+    return BigInt(numberValue);
+  }
+  return null;
+}
+
+function describeExactValue(value) {
+  return value === null ? '(unknown)' : value.toString();
 }
 
 function compareFindings(a, b) {

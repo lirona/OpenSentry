@@ -1,3 +1,5 @@
+import { stableSerialize } from './stable-serialize.js';
+
 const PRIVILEGED_NAME_RE = /(owner|admin|role|govern|guardian|operator|paus|blacklist|blocklist|denylist|auth)/i;
 const FEE_NAME_RE = /(fee|tax|commission|spread)/i;
 const FEE_DESTINATION_RE = /(recipient|receiver|treasury|wallet|address|collector|reserve|vault)$/i;
@@ -15,10 +17,12 @@ const TOKEN_FEATURE_PATTERNS = Object.freeze({
   maxLimit: /(maxtx|maxtransaction|maxwallet|maxholding)/i,
   rebasing: /(rebase|gons|fragments|shares|sharestoassets|assetstoshares)/i,
 });
-const HUNDRED_SCALE = 100;
-const BPS_SCALE = 10_000;
-const KNOWN_FEE_SCALES = Object.freeze([HUNDRED_SCALE, BPS_SCALE, 1_000_000, 1e18]);
+const HUNDRED_SCALE = 100n;
+const BPS_SCALE = 10_000n;
+const MAX_SAFE_INTEGER_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
+const KNOWN_FEE_SCALES = Object.freeze([HUNDRED_SCALE, BPS_SCALE, 1_000_000n, 1_000_000_000_000_000_000n]);
 const SCALE_NAME_RE = /(bps|basis|percent|pct|scale|denominator|precision|wad)/i;
+const GUARD_HELPER_CALL_RE = /^_+(require|check|ensure|assert|enforce)/i;
 
 export function extractSolidityFacts({ compilerOutput, files = [] } = {}) {
   if (!compilerOutput || typeof compilerOutput !== 'object') {
@@ -144,8 +148,10 @@ function populateFactsForContract(facts, context) {
         parameters: fn.parameters,
         controllingParameters: fn.controllingParameters,
         capRaw: fn.feeCap?.raw || null,
-        capValue: fn.feeCap?.value ?? null,
-        scale: fn.feeScale,
+        capValue: toSafeInteger(fn.feeCap?.valueExact),
+        capValueExact: toExactIntegerString(fn.feeCap?.valueExact),
+        scale: toSafeInteger(fn.feeScale),
+        scaleExact: toExactIntegerString(fn.feeScale),
         canReach100Percent: determineHundredPercent(fn.feeCap, fn.feeScale),
       }));
 
@@ -393,7 +399,13 @@ function inferFeeCap(body, parameters, constantValues) {
   let best = null;
   const captureBest = (candidate) => {
     if (!candidate) return;
-    if (!best || (candidate.value !== null && (best.value === null || candidate.value < best.value))) {
+    if (
+      !best ||
+      (
+        candidate.valueExact !== null &&
+        (best.valueExact === null || candidate.valueExact < best.valueExact)
+      )
+    ) {
       best = candidate;
     }
   };
@@ -493,22 +505,22 @@ function capFromCondition(condition, parameters, constantValues, invert = false)
 function stricterCap(left, right) {
   if (!left) return right;
   if (!right) return left;
-  if (left.value === null) return right;
-  if (right.value === null) return left;
-  return left.value <= right.value ? left : right;
+  if (left.valueExact === null) return right;
+  if (right.valueExact === null) return left;
+  return left.valueExact <= right.valueExact ? left : right;
 }
 
 function guaranteedCapAcrossBranches(left, right) {
   if (!left || !right) return null;
-  if (left.value === null) return left;
-  if (right.value === null) return right;
-  return left.value >= right.value ? left : right;
+  if (left.valueExact === null) return left;
+  if (right.valueExact === null) return right;
+  return left.valueExact >= right.valueExact ? left : right;
 }
 
 function capCandidate(raw, resolved, exclusive) {
   return {
-    raw: raw || (resolved !== null ? String(resolved) : null),
-    value: resolved === null ? null : (exclusive ? resolved - 1 : resolved),
+    raw: raw || (resolved !== null ? resolved.toString() : null),
+    valueExact: resolved === null ? null : (exclusive ? resolved - 1n : resolved),
   };
 }
 
@@ -543,8 +555,8 @@ function inferFeeScale(body, writes, stateVariables, constantValues) {
 function determineHundredPercent(cap, scale) {
   if (scale === null) return null;
   if (!cap) return true;
-  if (cap.value === null) return null;
-  return cap.value >= scale;
+  if (cap.valueExact === null) return null;
+  return cap.valueExact >= scale;
 }
 
 function hasFeeOnTransferSignal(name, writes) {
@@ -626,6 +638,12 @@ function inferGuardKinds(modifiers, body) {
     if (node.nodeType === 'IfStatement') {
       captureNamesInCondition(node.condition, capture);
     }
+    if (node.nodeType === 'ExpressionStatement' && node.expression?.nodeType === 'FunctionCall') {
+      const callee = referencedName(node.expression.expression);
+      if (callee && GUARD_HELPER_CALL_RE.test(callee)) {
+        capture(callee);
+      }
+    }
   });
 
   return [...kinds];
@@ -657,11 +675,7 @@ function isMsgSender(node) {
 function literalValue(node) {
   if (!node || typeof node !== 'object') return null;
   if (node.nodeType !== 'Literal' || node.kind !== 'number' || typeof node.value !== 'string') return null;
-  const normalized = node.value.replaceAll('_', '');
-  if (!/^(?:0[xX][0-9a-fA-F]+|\d+(?:[eE]\d+)?)$/.test(normalized)) return null;
-  const parsed = Number(normalized);
-  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) return null;
-  return parsed;
+  return parseIntegerLiteral(node.value);
 }
 
 function resolveNumericValue(node, constantValues) {
@@ -676,7 +690,7 @@ function resolveNumericValue(node, constantValues) {
 // A division denominator inside a fee-writing expression is strong evidence
 // that the referenced value is the intended scale.
 function isAstDenominatorFeeScale(name, value) {
-  if (!Number.isFinite(value) || value <= 1) return false;
+  if (typeof value !== 'bigint' || value <= 1n) return false;
   if (KNOWN_FEE_SCALES.includes(value)) return true;
   return typeof name === 'string' && SCALE_NAME_RE.test(name);
 }
@@ -684,13 +698,41 @@ function isAstDenominatorFeeScale(name, value) {
 // A top-level constant scan is weaker evidence, so require both a canonical
 // scale value and a scale-like name before inferring a fallback scale.
 function isConstantFallbackFeeScale(name, value) {
-  if (!Number.isFinite(value) || !KNOWN_FEE_SCALES.includes(value)) return false;
+  if (typeof value !== 'bigint' || !KNOWN_FEE_SCALES.includes(value)) return false;
   return typeof name === 'string' && SCALE_NAME_RE.test(name);
 }
 
 function uniqueCandidateValue(values) {
   if (values.size !== 1) return null;
   return [...values][0];
+}
+
+function parseIntegerLiteral(value) {
+  const normalized = value.replaceAll('_', '');
+
+  if (/^0[xX][0-9a-fA-F]+$/.test(normalized)) {
+    return BigInt(normalized);
+  }
+
+  if (/^\d+$/.test(normalized)) {
+    return BigInt(normalized);
+  }
+
+  const scientificMatch = normalized.match(/^(\d+)[eE](\d+)$/);
+  if (!scientificMatch) return null;
+
+  const [, coefficientText, exponentText] = scientificMatch;
+  return BigInt(coefficientText) * (10n ** BigInt(exponentText));
+}
+
+function toSafeInteger(value) {
+  if (typeof value !== 'bigint') return null;
+  if (value > MAX_SAFE_INTEGER_BIGINT || value < -MAX_SAFE_INTEGER_BIGINT) return null;
+  return Number(value);
+}
+
+function toExactIntegerString(value) {
+  return typeof value === 'bigint' ? value.toString() : null;
 }
 
 function booleanLiteralValue(node) {
@@ -814,22 +856,12 @@ function dedupeArray(items) {
   return deduped;
 }
 
-function stableSerialize(value) {
-  if (value === undefined) return 'undefined';
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map((entry) => stableSerialize(entry)).join(',')}]`;
-
-  return `{${Object.keys(value)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${stableSerialize(value[key])}`)
-    .join(',')}}`;
-}
-
 export const __internal = Object.freeze({
   childNodes,
   walkAst,
   locationFromNode,
   booleanLiteralValue,
+  literalValue,
   inferFeeCap,
   inferFeeScale,
   determineHundredPercent,

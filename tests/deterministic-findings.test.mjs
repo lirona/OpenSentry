@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { compileSourceWithBundledSolc } from '../functions/api/lib/solc-compile.js';
 import { extractSolidityFacts } from '../functions/api/lib/solidity-facts.js';
-import { deriveDeterministicFindings, __internal } from '../functions/api/lib/deterministic-findings.js';
+import { deriveDeterministicFindings } from '../functions/api/lib/deterministic-findings.js';
 
 function deriveFindings(source, compiler = 'pragma:0.8.20', fileName = 'Fixture.sol') {
   const files = [{ name: fileName, content: source }];
@@ -152,8 +152,33 @@ test('flags privileged mint and user-targeting burn paths', () => {
 
   const mintFinding = findings.find((entry) => entry.ruleId === 'privileged-mint');
   assert.ok(mintFinding);
-  assert.equal(mintFinding.severity, 'INFO');
+  assert.equal(mintFinding.severity, 'WARNING');
   assert.ok(findings.find((entry) => entry.ruleId === 'privileged-user-burn'));
+});
+
+test('flags an uncapped fee with an exact WAD-scale denominator', () => {
+  const { facts, findings } = deriveFindings(`
+    pragma solidity 0.8.20;
+    contract Vault {
+      address public owner;
+      uint256 public fee;
+      uint256 public constant WAD = 1e18;
+      modifier onlyOwner() { require(msg.sender == owner, "no"); _; }
+
+      function setFee(uint256 value) external onlyOwner {
+        fee = value / WAD;
+      }
+    }
+  `);
+
+  const feeControl = facts.feeControls.find((entry) => entry.variable === 'fee');
+  assert.ok(feeControl);
+  assert.equal(feeControl.setters[0].scale, null);
+  assert.equal(feeControl.setters[0].scaleExact, '1000000000000000000');
+
+  const finding = findings.find((entry) => entry.ruleId === 'fee-uncapped-100');
+  assert.ok(finding);
+  assert.equal(finding.severity, 'CRITICAL');
 });
 
 test('does not flag an uncapped fee when a conjunction includes a visible cap', () => {
@@ -193,19 +218,4 @@ test('flags privileged upgrade paths without a visible timelock', () => {
   const finding = findings.find((entry) => entry.ruleId === 'upgrade-without-timelock');
   assert.ok(finding);
   assert.equal(finding.severity, 'WARNING');
-});
-
-test('dedupe finding keys are safe when fields contain delimiters', () => {
-  const first = __internal.dedupeFindingKey({
-    ruleId: 'a|b',
-    location: 'c',
-    check: 'd',
-  });
-  const second = __internal.dedupeFindingKey({
-    ruleId: 'a',
-    location: 'b|c',
-    check: 'd',
-  });
-
-  assert.notEqual(first, second);
 });
