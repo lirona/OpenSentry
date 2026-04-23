@@ -1,3 +1,7 @@
+import { errorResult } from '../error-result.js';
+import { buildOutputSchema } from '../output-schema.js';
+import { tryParseJson } from '../try-parse-json.js';
+
 const CODEX_CLI_BINARY = 'codex';
 
 export function createCodexCliProvider() {
@@ -60,34 +64,6 @@ function buildCodexCliPrompt(systemPrompt, userMessage) {
   );
 }
 
-function buildOutputSchema() {
-  return {
-    type: 'object',
-    additionalProperties: false,
-    required: ['agent', 'severity', 'summary', 'findings'],
-    properties: {
-      agent: { type: 'string' },
-      severity: { type: 'string', enum: ['SAFE', 'INFO', 'WARNING', 'CRITICAL'] },
-      summary: { type: 'string' },
-      findings: {
-        type: 'array',
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['check', 'severity', 'location', 'summary', 'detail', 'user_impact'],
-          properties: {
-            check: { type: 'string' },
-            severity: { type: 'string', enum: ['SAFE', 'INFO', 'WARNING', 'CRITICAL'] },
-            location: { type: 'string' },
-            summary: { type: 'string' },
-            detail: { type: 'string' },
-            user_impact: { type: 'string' },
-          },
-        },
-      },
-    },
-  };
-}
 
 async function runCodexCli({ spawn, cwd, timeoutMs, schemaPath, model, prompt, killGraceMs = 2_000 }) {
   return new Promise((resolve) => {
@@ -196,7 +172,7 @@ function extractCodexCliText(stdout) {
     .filter(Boolean);
 
   for (let i = lines.length - 1; i >= 0; i--) {
-    const event = parseJsonLine(lines[i]);
+    const event = tryParseJson(lines[i]);
     if (!event) continue;
 
     const eventText = extractTextFromEvent(event);
@@ -220,13 +196,6 @@ function extractCodexCliText(stdout) {
   return '';
 }
 
-function parseJsonLine(line) {
-  try {
-    return JSON.parse(line);
-  } catch (_) {
-    return null;
-  }
-}
 
 function extractTextFromEvent(event) {
   if (!event || typeof event !== 'object') return '';
@@ -257,10 +226,6 @@ function normalizeJsonLine(line) {
   const candidate = line.slice(braceIndex).trim();
   if (candidate.startsWith('{') && candidate.endsWith('}')) return candidate;
   return '';
-}
-
-function errorResult(code, message, extra = {}) {
-  return { ok: false, error: { code, message, ...extra } };
 }
 
 export { CODEX_CLI_BINARY };

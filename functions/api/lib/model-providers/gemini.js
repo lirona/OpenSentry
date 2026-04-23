@@ -1,3 +1,5 @@
+import { errorResult } from '../error-result.js';
+
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 export function createGeminiProvider() {
@@ -71,10 +73,6 @@ export function createGeminiProvider() {
       return { ok: true, text };
     },
   });
-}
-
-function errorResult(code, message, extra = {}) {
-  return { ok: false, error: { code, message, ...extra } };
 }
 
 export { GEMINI_BASE_URL };

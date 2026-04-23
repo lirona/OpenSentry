@@ -1,3 +1,7 @@
+import { errorResult } from '../error-result.js';
+import { buildOutputSchema } from '../output-schema.js';
+import { tryParseJson } from '../try-parse-json.js';
+
 const CLAUDE_CLI_BINARY = 'claude';
 
 const SEVERITY_SET = new Set(['SAFE', 'INFO', 'WARNING', 'CRITICAL']);
@@ -68,34 +72,6 @@ function buildClaudeCliSystemPrompt(systemPrompt) {
   );
 }
 
-function buildOutputSchema() {
-  return {
-    type: 'object',
-    additionalProperties: false,
-    required: ['agent', 'severity', 'summary', 'findings'],
-    properties: {
-      agent: { type: 'string' },
-      severity: { type: 'string', enum: ['SAFE', 'INFO', 'WARNING', 'CRITICAL'] },
-      summary: { type: 'string' },
-      findings: {
-        type: 'array',
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['check', 'severity', 'location', 'summary', 'detail', 'user_impact'],
-          properties: {
-            check: { type: 'string' },
-            severity: { type: 'string', enum: ['SAFE', 'INFO', 'WARNING', 'CRITICAL'] },
-            location: { type: 'string' },
-            summary: { type: 'string' },
-            detail: { type: 'string' },
-            user_impact: { type: 'string' },
-          },
-        },
-      },
-    },
-  };
-}
 
 async function runClaudeCli({ spawn, cwd, timeoutMs, jsonSchema, model, systemPromptPath, prompt }) {
   return new Promise((resolve) => {
@@ -130,18 +106,18 @@ async function runClaudeCli({ spawn, cwd, timeoutMs, jsonSchema, model, systemPr
     let stdout = '';
     let stderr = '';
     let resolved = false;
-    let sigkillTimer = null;
+    let killTimer = null;
 
     const timer = setTimeout(() => {
       child.kill('SIGTERM');
-      sigkillTimer = setTimeout(() => {
+      killTimer = setTimeout(() => {
         try {
           child.kill('SIGKILL');
         } catch (_) {
           // Ignore cases where the child has already exited.
         }
       }, 2_000);
-      sigkillTimer.unref?.();
+      killTimer.unref?.();
       finish(errorResult('TIMEOUT', `Model call exceeded ${timeoutMs}ms`));
     }, timeoutMs);
 
@@ -160,13 +136,13 @@ async function runClaudeCli({ spawn, cwd, timeoutMs, jsonSchema, model, systemPr
 
     child.on('error', (error) => {
       clearTimeout(timer);
-      if (sigkillTimer) clearTimeout(sigkillTimer);
+      if (killTimer) clearTimeout(killTimer);
       finish(errorResult('PROVIDER_ERROR', `Claude Code execution failed: ${error.message}`));
     });
 
     child.on('close', (code, signal) => {
       clearTimeout(timer);
-      if (sigkillTimer) clearTimeout(sigkillTimer);
+      if (killTimer) clearTimeout(killTimer);
 
       if (resolved) return;
 
@@ -257,17 +233,6 @@ function looksLikeAuthError(message) {
   return /\blog(?:\s+|-)in\b|\bsign(?:\s+|-)in\b|\bauth(?:entication|enticate)?\b|\bnot logged in\b/i.test(message);
 }
 
-function tryParseJson(text) {
-  try {
-    return JSON.parse(text);
-  } catch (_) {
-    return null;
-  }
-}
-
-function errorResult(code, message, extra = {}) {
-  return { ok: false, error: { code, message, ...extra } };
-}
 
 export { CLAUDE_CLI_BINARY };
 export const __internal = Object.freeze({

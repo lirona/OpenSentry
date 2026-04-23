@@ -1,3 +1,5 @@
+import { errorResult } from '../error-result.js';
+
 const CODEX_API_URL = 'https://api.openai.com/v1/chat/completions';
 
 export function createCodexProvider() {
@@ -95,10 +97,6 @@ function extractRefusalText(content) {
     .filter((part) => part?.type === 'refusal' && typeof part.refusal === 'string')
     .map((part) => part.refusal)
     .join('');
-}
-
-function errorResult(code, message, extra = {}) {
-  return { ok: false, error: { code, message, ...extra } };
 }
 
 export { CODEX_API_URL };

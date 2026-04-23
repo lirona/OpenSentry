@@ -26,6 +26,7 @@ import { createClaudeProvider, CLAUDE_API_URL, CLAUDE_API_VERSION } from './mode
 import { createCodexProvider, CODEX_API_URL } from './model-providers/codex.js';
 import { createCodexCliProvider, CODEX_CLI_BINARY } from './model-providers/codex-cli.js';
 import { createClaudeCliProvider, CLAUDE_CLI_BINARY } from './model-providers/claude-cli.js';
+import { errorResult } from './error-result.js';
 
 // Total wall-clock budget per agent, shared across attempts. The 30s Pages
 // Functions limit minus a 5s orchestrator margin.
@@ -372,9 +373,6 @@ function validateAgentOutput(obj) {
   return null;
 }
 
-function errorResult(code, message, extra = {}) {
-  return { ok: false, error: { code, message, ...extra } };
-}
 
 function failure(key, error, attempts) {
   return { ok: false, key, error, attempts };

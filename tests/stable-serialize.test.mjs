@@ -51,3 +51,10 @@ test('stableSerialize handles nested arrays and objects recursively', () => {
 
   assert.equal(first, second);
 });
+
+test('stableSerialize handles BigInt values without throwing', () => {
+  assert.equal(stableSerialize(42n), '42n');
+  assert.equal(stableSerialize({ scale: 10000n }), '{"scale":10000n}');
+  assert.notEqual(stableSerialize(10000n), stableSerialize(10000));
+  assert.equal(stableSerialize([1n, { scale: 2n }]), '[1n,{"scale":2n}]');
+});

@@ -12,6 +12,7 @@
 // Exported: fetchSource(address, chain, env, options?)
 
 import { buildSourceBundle } from './source-bundle.js';
+import { tryParseJson } from './try-parse-json.js';
 
 const V2_BASE_URL = "https://api.etherscan.io/v2/api";
 
@@ -303,14 +304,6 @@ function parseSourceCode(rawSourceCode, contractName) {
   // Single-file fallback.
   const fileName = `${contractName || "Contract"}.sol`;
   return buildSourceBundle([{ name: fileName, content: rawSourceCode }]);
-}
-
-function tryParseJson(text) {
-  try {
-    return JSON.parse(text);
-  } catch (_) {
-    return null;
-  }
 }
 
 /**

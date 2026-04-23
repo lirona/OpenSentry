@@ -1,5 +1,6 @@
 export function stableSerialize(value) {
   if (value === undefined) return 'undefined';
+  if (typeof value === 'bigint') return `${value.toString()}n`;
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map((entry) => stableSerialize(entry)).join(',')}]`;
 

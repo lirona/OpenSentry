@@ -1,3 +1,5 @@
+import { errorResult } from '../error-result.js';
+
 const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
 const CLAUDE_API_VERSION = '2023-06-01';
 
@@ -52,10 +54,6 @@ export function createClaudeProvider() {
       return { ok: true, text };
     },
   });
-}
-
-function errorResult(code, message, extra = {}) {
-  return { ok: false, error: { code, message, ...extra } };
 }
 
 export { CLAUDE_API_URL, CLAUDE_API_VERSION };
