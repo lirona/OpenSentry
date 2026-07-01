@@ -25,6 +25,7 @@ function makeContext({
   contentType,
   ip,
   env,
+  headers: extraHeaders,
   nextResponse,
   nextThrows,
 } = {}) {
@@ -32,6 +33,9 @@ function makeContext({
   if (origin) headers.set('Origin', origin);
   if (contentType) headers.set('Content-Type', contentType);
   if (ip) headers.set('CF-Connecting-IP', ip);
+  for (const [key, value] of Object.entries(extraHeaders || {})) {
+    headers.set(key, value);
+  }
 
   const request = new Request(url, { method, headers });
 
@@ -130,6 +134,54 @@ test('POST /api/analyze with application/json; charset=utf-8 → passes', async 
     origin: 'https://opensentry.tech',
     ip: '1.2.3.4',
   }));
+  assert.equal(res.status, 200);
+});
+
+test('POST /api/analyze without required local-runner token → 401', async () => {
+  let nextCalled = false;
+  const context = makeContext({
+    contentType: 'application/json',
+    origin: 'https://opensentry.tech',
+    ip: '1.2.3.4',
+    env: { ANALYZE_RELAY_TOKEN: 'runner-secret' },
+  });
+  context.next = async () => {
+    nextCalled = true;
+    return new Response(JSON.stringify({ ok: true }));
+  };
+
+  const res = await onRequest(context);
+
+  assert.equal(res.status, 401);
+  assert.equal(nextCalled, false);
+  assert.equal(res.headers.get('Access-Control-Allow-Origin'), 'https://opensentry.tech');
+  const body = await json(res);
+  assert.equal(body.error, 'unauthorized_runner_request');
+});
+
+test('POST /api/analyze with required local-runner token → passes', async () => {
+  const res = await onRequest(makeContext({
+    contentType: 'application/json',
+    origin: 'https://opensentry.tech',
+    ip: '1.2.3.4',
+    env: { ANALYZE_RELAY_TOKEN: 'runner-secret' },
+    headers: { 'x-opensentry-runner-token': 'runner-secret' },
+  }));
+
+  assert.equal(res.status, 200);
+});
+
+test('POST /api/analyze relay mode does not require browser token', async () => {
+  const res = await onRequest(makeContext({
+    contentType: 'application/json',
+    origin: 'https://opensentry.tech',
+    ip: '1.2.3.4',
+    env: {
+      ANALYZE_RELAY_TOKEN: 'runner-secret',
+      ANALYZE_RELAY_URL: 'https://runner.example.com/api/analyze',
+    },
+  }));
+
   assert.equal(res.status, 200);
 });
 

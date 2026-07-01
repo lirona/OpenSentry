@@ -18,6 +18,15 @@ ANALYZE_IP_COOLDOWN_MS="15000"
 # Optional global daily cap. Set to 0 to disable.
 ANALYZE_DAILY_CAP="0"
 
+# --- Public-site relay to a local desktop runner ---
+# Set ANALYZE_RELAY_URL only in production Cloudflare Pages if /api/analyze
+# should forward to a tunnel on your desktop instead of running in Cloudflare.
+ANALYZE_RELAY_URL=""
+# Set the same token in production and on the local desktop runner. When this
+# token is set locally without ANALYZE_RELAY_URL, /api/analyze requires the
+# x-opensentry-runner-token header.
+ANALYZE_RELAY_TOKEN=""
+
 # --- Etherscan V2 (unified multichain key) ---
 # Etherscan V2 uses ONE key across all supported chains
 # (Ethereum, Base, Arbitrum, Optimism, Polygon, ...).

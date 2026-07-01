@@ -10,8 +10,9 @@
   "scripts": {
     "build": "node scripts/embed-skills.js",
     "cli": "node ./bin/opensentry.js",
-    "dev": "wrangler pages dev",
-    "deploy": "wrangler pages deploy website --project-name opensentry",
+    "dev": "wrangler --cwd cloudflare pages dev ../website",
+    "runner": "node --env-file=.dev.vars ./bin/opensentry-runner.js",
+    "deploy": "wrangler --cwd cloudflare pages deploy ../website --project-name opensentry",
     "test": "node --test tests/*.test.mjs"
   },
   "devDependencies": {

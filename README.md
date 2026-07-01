@@ -32,7 +32,7 @@ The security analysis agents produce structured findings across access control a
 
 ### Prerequisites
 
-- Node.js >= 18
+- Node.js >= 20.6
 - npm
 
 ### 1. Clone and install
@@ -69,6 +69,8 @@ Edit `.dev.vars` and fill in your keys:
 | `AI_AGENT_CONCURRENCY` | Optional model-call concurrency. Defaults to `1` for free-tier friendliness |
 | `ANALYZE_IP_COOLDOWN_MS` | Optional per-IP cooldown in milliseconds. Set `0` to disable |
 | `ANALYZE_DAILY_CAP` | Optional global daily cap. Set `0` to disable |
+| `ANALYZE_RELAY_URL` | Optional production relay target. If set, `/api/analyze` forwards requests to this URL instead of running analysis in Cloudflare |
+| `ANALYZE_RELAY_TOKEN` | Optional shared secret sent from the public relay to the local runner as `x-opensentry-runner-token` |
 | `ETHERSCAN_API_KEY` | [Etherscan](https://etherscan.io/apis) — free tier is sufficient. One key works across all chains via V2 API |
 
 ### 3. Build embedded skills
@@ -85,7 +87,57 @@ This reads `skill/agents/*.md` and generates `functions/api/lib/embedded-skills.
 npm run dev
 ```
 
-Opens `http://localhost:8788`. The audit tool is at `/audit-tool.html`.
+Opens `http://localhost:8788`. The audit tool is at `/audit-tool.html` and
+uses the production relay API.
+
+### 4b. Run public audits on your desktop
+
+If you want `opensentry.tech` to stay public while every audit runs on your
+desktop, run this repo locally and expose it through a tunnel.
+
+On your desktop `.dev.vars`, set the normal analysis secrets and a relay token:
+
+```bash
+AI_PROVIDER="codex"
+AI_API_KEY="your_model_api_key"
+AI_MODEL="your_model"
+ETHERSCAN_API_KEY="your_etherscan_key"
+ANALYZE_RELAY_TOKEN="use-a-long-random-secret"
+```
+
+Do not set `ANALYZE_RELAY_URL` on the desktop runner. That variable is only for
+the production Cloudflare Pages environment.
+
+Start the local runner:
+
+```bash
+npm run build
+npm run runner
+```
+
+In another terminal, expose it with a tunnel:
+
+```bash
+cloudflared tunnel --protocol http2 --url http://127.0.0.1:8788
+```
+
+Use the tunnel's public HTTPS URL as the production relay target. In Cloudflare
+Pages for `opensentry.tech`, set:
+
+```bash
+ANALYZE_RELAY_URL="https://your-tunnel-host.example/api/analyze"
+ANALYZE_RELAY_TOKEN="the-same-long-random-secret"
+```
+
+After redeploying the Pages environment, visitors keep using
+`https://opensentry.tech/audit-tool.html`. The browser calls
+`https://opensentry.pages.dev/api/analyze`, which relays to your desktop.
+Keep both `npm run runner` and the tunnel running; if your computer sleeps or
+the tunnel stops, public audits will fail with `relay_unavailable`.
+
+For a stable production setup, use a named Cloudflare Tunnel instead of the
+temporary `trycloudflare.com` URL, then point `ANALYZE_RELAY_URL` at that stable
+hostname.
 
 ### 5. Run tests
 
@@ -160,59 +212,31 @@ npm run cli -- analyze --file ./contracts/Vault.sol --trace-dir ./.opensentry-tr
 ## Architecture
 
 ```
-Browser                    Cloudflare Pages Functions              External
-───────                    ──────────────────────────              ────────
-                           ┌─────────────────────┐
-  POST /api/analyze  ───►  │   _middleware.js     │
-  { address, chain }       │  CORS, rate limit,   │
-                           │  request validation  │
-                           └──────────┬──────────┘
-                                      ▼
-                           ┌─────────────────────┐
-                           │    analyze.js        │
-                           │  (orchestrator)      │
-                           └──────────┬──────────┘
-                              ┌───────┴───────┐
-                              ▼               ▼
-                     ┌──────────────┐  ┌──────────────┐
-                     │ fetch-source │  │ embedded-     │
-                     │    .js       │  │ skills.js     │
-                     └──────┬───────┘  └──────┬───────┘
-                            │                 │
-                            ▼                 ▼
-                     Etherscan V2      prompt-wrapper.js
-                        API            (anti-injection
-                                        + agent prompt)
-                                             │
-                              ┌──────────────┼──────────────┐
-                              ▼              ▼              ▼
-                        ┌──────────┐  ┌──────────┐  ┌──────────┐
-                        │  agent   │  │  agent   │  │  agent   │  x8 parallel
-                        │ runner   │  │ runner   │  │ runner   │  via
-                        └────┬─────┘  └────┬─────┘  └────┬─────┘  Promise.allSettled
-                             │             │             │
-                             ▼             ▼             ▼
-                          AI API (JSON mode)
-                              │
-                              ▼
-                     ┌──────────────────┐
-                     │  merge-results   │
-                     │  quality gate,   │
-                     │  dedup, sort,    │
-                     │  assign OS-###   │
-                     └────────┬─────────┘
-                              ▼
-                     JSON response ───► Browser renders report
+Browser on opensentry.tech
+        │
+        │ POST https://opensentry.pages.dev/api/analyze
+        ▼
+Cloudflare Pages relay
+  CORS, validation, rate limiting
+        │
+        │ authenticated HTTPS tunnel
+        ▼
+Local Node runner
+  source fetch → compiler facts → 8 agents → merge
+        │                              │
+        ▼                              ▼
+  Etherscan V2                    configured AI provider
 ```
 
 ### Pipeline summary
 
-1. **Middleware** — CORS (opensentry.tech + localhost), configurable abuse protection, POST + JSON validation
-2. **Orchestrator** — validates input, fetches source, fans out 8 agents, merges results
-3. **Fetch source** — Etherscan V2 multichain API, handles single/multi-file, proxies, retries on rate limit
-4. **Prompt wrapper** — prepends anti-injection preamble to each agent's markdown prompt
-5. **Agent runner** — calls the configured model with 25s budget, 1 retry for transient errors, validates output schema
-6. **Merger** — classifies results, quality-gates findings (citation check, contradiction filter, finding cap), deduplicates by root cause (location + Jaccard check-name similarity), resolves severity conflicts, sorts CRITICAL > WARNING > INFO, assigns OS-001/002/... IDs
+1. **Public middleware** — CORS, configurable abuse protection, method and content-type validation
+2. **Relay** — validates address and chain, then forwards with the shared runner token
+3. **Local runner** — accepts only authenticated requests and executes the Node analysis pipeline
+4. **Fetch source** — Etherscan V2 multichain API, including multi-file and proxy handling
+5. **Compiler facts** — compiles with the matching bundled Solidity compiler and derives deterministic findings
+6. **Agent runner** — calls the configured model provider with bounded concurrency and validates structured output
+7. **Merger** — quality-gates, deduplicates, sorts, and assigns OS-001/002/... finding IDs
 
 ---
 

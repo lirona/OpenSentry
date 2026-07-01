@@ -1,5 +1,6 @@
 name = "opensentry"
 compatibility_date = "2026-04-08"
+compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = "./website"
 
 # ---------------------------------------------------------------------------
@@ -22,6 +23,8 @@ pages_build_output_dir = "./website"
 #   AI_AGENT_CONCURRENCY="1"
 #   ANALYZE_IP_COOLDOWN_MS="15000"
 #   ANALYZE_DAILY_CAP="0"
+#   ANALYZE_RELAY_URL="https://your-local-runner.example/api/analyze"
+#   ANALYZE_RELAY_TOKEN="..."
 #   ETHERSCAN_API_KEY="..."
 #
 # Access inside Pages Functions via `context.env.AI_API_KEY`, etc.
@@ -35,6 +38,8 @@ pages_build_output_dir = "./website"
 #   - AI_AGENT_CONCURRENCY
 #   - ANALYZE_IP_COOLDOWN_MS
 #   - ANALYZE_DAILY_CAP
+#   - ANALYZE_RELAY_URL
+#   - ANALYZE_RELAY_TOKEN
 #
 # v1 does not use KV, D1, R2, Durable Objects, or Queues.
 # ---------------------------------------------------------------------------

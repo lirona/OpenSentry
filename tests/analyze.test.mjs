@@ -1,4 +1,4 @@
-// Integration tests for functions/api/analyze.js (POST /api/analyze)
+// Integration tests for the public relay and local POST /api/analyze handlers.
 //
 // Run:  node --test tests/analyze.test.mjs
 //
@@ -9,7 +9,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { onRequestPost } from '../functions/api/analyze.js';
+import { onRequestPost as onRelayRequest } from '../functions/api/analyze.js';
+import { onRequestPost } from '../functions/api/lib/local-analyze.js';
 
 // ---- helpers ---------------------------------------------------------------
 
@@ -21,17 +22,22 @@ const ENV = {
   ETHERSCAN_API_KEY: 'test-etherscan-key',
 };
 
-function makeRequest(body) {
+function makeRequest(body, options = {}) {
+  const headers = new Headers({ 'content-type': 'application/json' });
+  for (const [key, value] of Object.entries(options.headers || {})) {
+    headers.set(key, value);
+  }
+
   return new Request('https://opensentry.tech/api/analyze', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers,
     body: JSON.stringify(body),
   });
 }
 
-function makeContext(body, envOverrides = {}) {
+function makeContext(body, envOverrides = {}, requestOptions = {}) {
   return {
-    request: makeRequest(body),
+    request: makeRequest(body, requestOptions),
     env: { ...ENV, ...envOverrides },
   };
 }
@@ -189,6 +195,198 @@ test('rejects unsupported chain', async () => {
   assert.equal(res.status, 400);
   const body = await res.json();
   assert.equal(body.error, 'unsupported_chain');
+});
+
+test('rejects public local-runner requests without the relay token', async () => {
+  const res = await onRequestPost(makeContext(
+    { address: ADDR, chain: 'ethereum' },
+    { ANALYZE_RELAY_TOKEN: 'runner-secret' },
+  ));
+
+  assert.equal(res.status, 401);
+  const body = await res.json();
+  assert.equal(body.success, false);
+  assert.equal(body.error, 'unauthorized_runner_request');
+});
+
+test('accepts public local-runner requests with the relay token', async () => {
+  const restore = stubAll();
+  try {
+    const res = await onRequestPost(makeContext(
+      { address: ADDR, chain: 'ethereum' },
+      { ANALYZE_RELAY_TOKEN: 'runner-secret' },
+      { headers: { 'x-opensentry-runner-token': 'runner-secret' } },
+    ));
+
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.success, true);
+  } finally {
+    restore();
+  }
+});
+
+// ---- desktop relay mode ----------------------------------------------------
+
+test('relays valid analyze requests to ANALYZE_RELAY_URL', async () => {
+  let seenUrl;
+  let seenInit;
+  const restore = stubFetch(async (url, init) => {
+    seenUrl = String(url);
+    seenInit = init;
+    return {
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      text: async () => JSON.stringify({
+        success: true,
+        relayed: true,
+      }),
+    };
+  });
+
+  try {
+    const res = await onRelayRequest(makeContext(
+      { address: ADDR, chain: 'base' },
+      {
+        ANALYZE_RELAY_URL: 'https://runner.example.com',
+        ANALYZE_RELAY_TOKEN: 'runner-secret',
+      },
+      { headers: { 'CF-Connecting-IP': '203.0.113.7' } },
+    ));
+
+    assert.equal(res.status, 200);
+    assert.equal(seenUrl, 'https://runner.example.com/api/analyze');
+    assert.equal(seenInit.method, 'POST');
+    assert.equal(seenInit.headers.get('x-opensentry-runner-token'), 'runner-secret');
+    assert.equal(seenInit.headers.get('x-forwarded-for'), '203.0.113.7');
+    assert.deepEqual(JSON.parse(seenInit.body), { address: ADDR, chain: 'base' });
+
+    const body = await res.json();
+    assert.deepEqual(body, { success: true, relayed: true });
+  } finally {
+    restore();
+  }
+});
+
+test('relay mode fails closed when ANALYZE_RELAY_TOKEN is missing', async () => {
+  let fetchCalled = false;
+  const restore = stubFetch(async () => {
+    fetchCalled = true;
+    throw new Error('should not fetch');
+  });
+
+  try {
+    const res = await onRelayRequest(makeContext(
+      { address: ADDR, chain: 'ethereum' },
+      { ANALYZE_RELAY_URL: 'https://runner.example.com/api/analyze' },
+    ));
+
+    assert.equal(res.status, 500);
+    assert.equal(fetchCalled, false);
+    const body = await res.json();
+    assert.equal(body.success, false);
+    assert.equal(body.error, 'invalid_relay_config');
+    assert.match(body.message, /ANALYZE_RELAY_TOKEN/);
+  } finally {
+    restore();
+  }
+});
+
+test('public API fails closed when relay mode is not configured', async () => {
+  const res = await onRelayRequest(makeContext(
+    { address: ADDR, chain: 'ethereum' },
+  ));
+
+  assert.equal(res.status, 503);
+  const body = await res.json();
+  assert.equal(body.success, false);
+  assert.equal(body.error, 'relay_not_configured');
+});
+
+test('relay mode rejects invalid ANALYZE_RELAY_URL', async () => {
+  const res = await onRelayRequest(makeContext(
+    { address: ADDR, chain: 'ethereum' },
+    { ANALYZE_RELAY_URL: 'ftp://runner.example.com' },
+  ));
+
+  assert.equal(res.status, 500);
+  const body = await res.json();
+  assert.equal(body.success, false);
+  assert.equal(body.error, 'invalid_relay_url');
+});
+
+test('relay mode rejects an endpoint that points back to itself', async () => {
+  let fetchCalled = false;
+  const restore = stubFetch(async () => {
+    fetchCalled = true;
+    throw new Error('should not fetch');
+  });
+
+  try {
+    const res = await onRelayRequest(makeContext(
+      { address: ADDR, chain: 'ethereum' },
+      {
+        ANALYZE_RELAY_URL: 'https://opensentry.tech/api/analyze',
+        ANALYZE_RELAY_TOKEN: 'runner-secret',
+      },
+    ));
+
+    assert.equal(res.status, 500);
+    assert.equal(fetchCalled, false);
+    const body = await res.json();
+    assert.equal(body.success, false);
+    assert.equal(body.error, 'relay_loop');
+  } finally {
+    restore();
+  }
+});
+
+test('relay mode returns 502 when the local runner cannot be reached', async () => {
+  const restore = stubFetch(async () => {
+    throw new Error('connect failed');
+  });
+
+  try {
+    const res = await onRelayRequest(makeContext(
+      { address: ADDR, chain: 'ethereum' },
+      {
+        ANALYZE_RELAY_URL: 'https://runner.example.com/api/analyze',
+        ANALYZE_RELAY_TOKEN: 'runner-secret',
+      },
+    ));
+
+    assert.equal(res.status, 502);
+    const body = await res.json();
+    assert.equal(body.success, false);
+    assert.equal(body.error, 'relay_unavailable');
+  } finally {
+    restore();
+  }
+});
+
+test('relay mode returns 502 when the local runner returns non-JSON', async () => {
+  const restore = stubFetch(async () => ({
+    status: 503,
+    headers: new Headers({ 'content-type': 'text/html' }),
+    text: async () => '<html>bad gateway</html>',
+  }));
+
+  try {
+    const res = await onRelayRequest(makeContext(
+      { address: ADDR, chain: 'ethereum' },
+      {
+        ANALYZE_RELAY_URL: 'https://runner.example.com/api/analyze',
+        ANALYZE_RELAY_TOKEN: 'runner-secret',
+      },
+    ));
+
+    assert.equal(res.status, 502);
+    const body = await res.json();
+    assert.equal(body.success, false);
+    assert.equal(body.error, 'relay_bad_response');
+  } finally {
+    restore();
+  }
 });
 
 // ---- source fetch errors ---------------------------------------------------

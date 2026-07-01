@@ -10,6 +10,8 @@
 // instances are ephemeral and non-shared, this is best-effort — enough for
 // the PoC but not production-grade.
 
+import { checkRunnerToken } from './lib/analyze-relay.js';
+
 // ---- CORS config -----------------------------------------------------------
 
 const ALLOWED_ORIGINS = [
@@ -159,6 +161,11 @@ export async function onRequest(context) {
       return jsonResponse(415, { error: 'unsupported_media_type', message: 'Content-Type must be application/json.' }, allowed ? origin : null);
     }
 
+    const runnerTokenError = checkRunnerToken(request, env);
+    if (runnerTokenError) {
+      return withCors(runnerTokenError, allowed ? origin : null);
+    }
+
     // Abuse protection (checked before forwarding to the handler).
     const ip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'unknown';
     const config = getRateLimitConfig(env);
@@ -191,11 +198,7 @@ export async function onRequest(context) {
 
   // ---- Attach CORS headers to the response ----------------------------------
   if (allowed) {
-    const patched = new Response(response.body, response);
-    for (const [k, v] of Object.entries(corsHeaders(origin))) {
-      patched.headers.set(k, v);
-    }
-    return patched;
+    return withCors(response, origin);
   }
 
   return response;
@@ -212,6 +215,15 @@ function jsonResponse(status, body, origin, extraHeaders = {}) {
     Object.assign(headers, corsHeaders(origin));
   }
   return new Response(JSON.stringify(body), { status, headers });
+}
+
+function withCors(response, origin) {
+  if (!origin) return response;
+  const patched = new Response(response.body, response);
+  for (const [k, v] of Object.entries(corsHeaders(origin))) {
+    patched.headers.set(k, v);
+  }
+  return patched;
 }
 
 // Exported for tests only — allows resetting module-level state between runs.

@@ -389,6 +389,7 @@
   const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
   const COOLDOWN_SEC = 60;
   const QUOTA_KEY = 'os_quota';
+  const ANALYZE_API_URL = 'https://opensentry.pages.dev/api/analyze';
 
   const ERROR_MAP = {
     invalid_address:  { icon: '\u26A0\uFE0F', title: 'Invalid Address', msg: 'Please enter a valid 0x-prefixed 40-character hex address.' },
@@ -397,6 +398,10 @@
     daily_limit:      { icon: '\u23F0', title: 'Daily Limit Reached', msg: 'The daily analysis limit has been reached. This resets at midnight UTC. Please try again tomorrow.' },
     ip_cooldown:      { icon: '\u23F3', title: 'Please Wait', msg: 'You recently submitted an analysis. Please wait before trying again.' },
     missing_api_key:  { icon: '\u{1F511}', title: 'Configuration Error', msg: 'The server is missing a required API key. Please contact the administrator.' },
+    invalid_relay_config:{ icon: '\u{1F6E0}\uFE0F', title: 'Configuration Error', msg: 'The analysis relay is not configured correctly. Please contact the administrator.' },
+    invalid_relay_url:{ icon: '\u{1F6E0}\uFE0F', title: 'Configuration Error', msg: 'The analysis relay address is invalid. Please contact the administrator.' },
+    relay_unavailable:{ icon: '\u{1F50C}', title: 'Analysis Runner Offline', msg: 'The analysis runner is currently unavailable. Please try again later.' },
+    relay_bad_response:{ icon: '\u26A0\uFE0F', title: 'Invalid Runner Response', msg: 'The analysis runner returned an invalid response. Please try again later.' },
     internal_error:   { icon: '\u{1F6A8}', title: 'Server Error', msg: 'An unexpected error occurred. Please try again later.' },
   };
 
@@ -753,7 +758,7 @@
     }, 800);
 
     try {
-      const res = await fetch('/api/analyze', {
+      const res = await fetch(ANALYZE_API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ address, chain }),
