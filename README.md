@@ -115,7 +115,7 @@ npm run build
 npm run runner
 ```
 
-In another terminal, expose it with a tunnel:
+For a temporary test tunnel, run:
 
 ```bash
 cloudflared tunnel --protocol http2 --url http://127.0.0.1:8788
@@ -135,9 +135,24 @@ After redeploying the Pages environment, visitors keep using
 Keep both `npm run runner` and the tunnel running; if your computer sleeps or
 the tunnel stops, public audits will fail with `relay_unavailable`.
 
-For a stable production setup, use a named Cloudflare Tunnel instead of the
-temporary `trycloudflare.com` URL, then point `ANALYZE_RELAY_URL` at that stable
-hostname.
+For production, create a named tunnel once:
+
+```bash
+cloudflared tunnel login
+cloudflared tunnel create opensentry-runner
+cloudflared tunnel route dns opensentry-runner runner.opensentry.tech
+```
+
+Then start the named tunnel alongside the runner:
+
+```bash
+cloudflared tunnel --protocol http2 \
+  --url http://127.0.0.1:8788 \
+  run opensentry-runner
+```
+
+Set `ANALYZE_RELAY_URL` to
+`https://runner.opensentry.tech/api/analyze`.
 
 ### 5. Run tests
 
