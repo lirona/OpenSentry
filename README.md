@@ -62,7 +62,7 @@ Edit `.dev.vars` and fill in your keys:
 | Variable | Where to get it |
 |----------|----------------|
 | `AI_PROVIDER` | Model provider. Supported: `gemini`, `claude`, `codex`, `codex-cli`, or `claude-cli`. Defaults to `gemini` if omitted |
-| `AI_API_KEY` | API key for API-backed providers |
+| `AI_API_KEY` | API key for the selected API-backed provider |
 | `AI_MODEL` | Model ID to use. Change this in env vars instead of code |
 | `AI_TOTAL_BUDGET_MS` | Optional per-agent total timeout override in milliseconds. Useful for slower local providers like `codex-cli` or `claude-cli` |
 | `AI_PER_ATTEMPT_TIMEOUT_MS` | Optional per-attempt timeout override in milliseconds |

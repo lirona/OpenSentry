@@ -159,30 +159,34 @@ test('CLI can run end-to-end with the codex provider', { concurrency: false }, a
   let calls = 0;
   const restore = stubFetch(async (url, init) => {
     calls++;
-    assert.equal(url, 'https://api.openai.com/v1/chat/completions');
+    assert.equal(url, 'https://api.openai.com/v1/responses');
+    assert.equal(init.headers.authorization, 'Bearer test-key');
 
     const body = JSON.parse(init.body);
     assert.equal(body.model, 'gpt-5.3-codex');
-    assert.equal(body.messages[0].role, 'developer');
-    assert.equal(body.messages[1].role, 'user');
-    assert.deepEqual(body.response_format, { type: 'json_object' });
+    assert.equal(typeof body.instructions, 'string');
+    assert.notEqual(body.instructions.length, 0);
+    assert.match(body.input, /--- CONTRACT SOURCE CODE/);
+    assert.deepEqual(body.text, { format: { type: 'json_object' } });
+    assert.equal(body.store, false);
 
     return {
       ok: true,
       status: 200,
       json: async () => ({
-        choices: [{
-          message: {
-            role: 'assistant',
-            content: JSON.stringify({
+        status: 'completed',
+        output: [{
+          type: 'message',
+          role: 'assistant',
+          content: [{
+            type: 'output_text',
+            text: JSON.stringify({
               agent: 'Access Control',
               severity: 'SAFE',
               summary: 'No issues found.',
               findings: [],
             }),
-            refusal: null,
-          },
-          finish_reason: 'stop',
+          }],
         }],
       }),
     };

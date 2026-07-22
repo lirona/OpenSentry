@@ -1,6 +1,6 @@
 import { errorResult } from '../error-result.js';
 
-const CODEX_API_URL = 'https://api.openai.com/v1/chat/completions';
+const CODEX_API_URL = 'https://api.openai.com/v1/responses';
 
 export function createCodexProvider() {
   return Object.freeze({
@@ -16,12 +16,11 @@ export function createCodexProvider() {
           },
           body: JSON.stringify({
             model: env.AI_MODEL,
-            messages: [
-              { role: 'developer', content: systemPrompt },
-              { role: 'user', content: userMessage },
-            ],
+            instructions: systemPrompt,
+            input: userMessage,
             temperature: requestConfig.temperature,
-            response_format: { type: 'json_object' },
+            text: { format: { type: 'json_object' } },
+            store: false,
           }),
         },
       };
@@ -52,25 +51,22 @@ export function createCodexProvider() {
       return errorResult('HTTP_ERROR', `Model ${res.status}: ${apiMsg}`, { httpStatus: res.status });
     },
     extractText(payload) {
-      const choice = payload?.choices?.[0];
-      if (!choice) {
-        return errorResult('PARSE_FAILED', 'Model response had no choices');
+      if (payload?.status === 'failed' || payload?.error) {
+        const message = payload?.error?.message || 'Responses API returned a failed response';
+        return errorResult('HTTP_ERROR', `Model failed: ${message}`);
       }
 
-      if (choice.finish_reason === 'content_filter') {
-        return errorResult(
-          'SAFETY_BLOCKED',
-          'Model response was blocked by content filtering',
-          { finishReason: choice.finish_reason },
-        );
+      if (payload?.status === 'incomplete') {
+        const reason = payload?.incomplete_details?.reason || 'unknown';
+        return errorResult('PARSE_FAILED', `Model response was incomplete: ${reason}`);
       }
 
-      const refusal = choice?.message?.refusal || extractRefusalText(choice?.message?.content);
+      const refusal = extractRefusalText(payload);
       if (typeof refusal === 'string' && refusal.length > 0) {
         return errorResult('SAFETY_BLOCKED', `Model refusal: ${refusal}`);
       }
 
-      const text = extractMessageText(choice?.message?.content);
+      const text = extractMessageText(payload);
       if (typeof text !== 'string' || text.length === 0) {
         return errorResult('PARSE_FAILED', 'Model response had no text content');
       }
@@ -80,22 +76,30 @@ export function createCodexProvider() {
   });
 }
 
-function extractMessageText(content) {
-  if (typeof content === 'string') return content;
-  if (!Array.isArray(content)) return '';
+function extractMessageText(payload) {
+  if (typeof payload?.output_text === 'string' && payload.output_text.length > 0) {
+    return payload.output_text;
+  }
 
-  return content
-    .filter((part) => part?.type === 'text' && typeof part.text === 'string')
+  if (!Array.isArray(payload?.output)) return '';
+
+  return payload.output
+    .flatMap((item) => Array.isArray(item?.content) ? item.content : [])
+    .filter((part) => part?.type === 'output_text' && typeof part.text === 'string')
     .map((part) => part.text)
     .join('');
 }
 
-function extractRefusalText(content) {
-  if (!Array.isArray(content)) return '';
+function extractRefusalText(payload) {
+  if (!Array.isArray(payload?.output)) return '';
 
-  return content
-    .filter((part) => part?.type === 'refusal' && typeof part.refusal === 'string')
-    .map((part) => part.refusal)
+  return payload.output
+    .flatMap((item) => Array.isArray(item?.content) ? item.content : [])
+    .filter((part) => (
+      (part?.type === 'refusal' || part?.type === 'output_refusal') &&
+      (typeof part.refusal === 'string' || typeof part.text === 'string')
+    ))
+    .map((part) => part.refusal || part.text)
     .join('');
 }
 
