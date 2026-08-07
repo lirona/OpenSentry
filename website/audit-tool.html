@@ -136,6 +136,33 @@
     /* ── Results Section ── */
     #results-section { padding: 40px 0 80px; }
 
+    .bottom-line-card {
+      background: color-mix(in srgb, var(--sev) 7%, #111);
+      border: 1px solid color-mix(in srgb, var(--sev) 28%, #1e1e1e);
+      border-top: 3px solid var(--sev); border-radius: 12px;
+      padding: 28px; margin-bottom: 20px;
+    }
+    .bottom-line-eyebrow {
+      color: #777; font-size: 11px; font-weight: 700; letter-spacing: 1px;
+      text-transform: uppercase; margin-bottom: 8px;
+    }
+    .bottom-line-level {
+      display: flex; align-items: center; gap: 7px; color: var(--sev);
+      font-size: 12px; font-weight: 700; letter-spacing: .6px;
+      text-transform: uppercase; margin-bottom: 10px;
+    }
+    .bottom-line-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--sev); flex-shrink: 0; }
+    .bottom-line-sentence {
+      max-width: 820px; color: #fff; font-size: 23px; font-weight: 600;
+      line-height: 1.4; letter-spacing: -.2px;
+    }
+    .bottom-line-action {
+      display: inline-block; color: #bbb; font-size: 13px; font-weight: 600;
+      margin-top: 16px; transition: color .2s;
+    }
+    .bottom-line-action:hover { color: #fff; }
+    .bottom-line-coverage { color: #888; font-size: 12px; margin-top: 12px; }
+
     .results-header {
       background: #111; border: 1px solid #1e1e1e; border-radius: 12px;
       padding: 24px; margin-bottom: 20px;
@@ -263,6 +290,8 @@
       .results-meta { flex-direction: column; align-items: flex-start; }
       .finding-header { flex-direction: column; align-items: flex-start; }
       .summary-bar { flex-direction: column; }
+      .bottom-line-card { padding: 22px 20px; }
+      .bottom-line-sentence { font-size: 20px; }
     }
   </style>
 </head>
@@ -322,10 +351,11 @@
 
     <!-- ════ Results Section ════ -->
     <section id="results-section" class="section">
+      <div id="bottom-line" class="bottom-line-card sev-unknown"></div>
       <div id="results-header" class="results-header"></div>
       <div id="summary-bar" class="summary-bar"></div>
 
-      <div class="agent-table">
+      <div id="analysis-details" class="agent-table">
         <div class="agent-table-title">Risk Summary by Agent</div>
         <div id="agent-table-grid" class="agent-table-grid"></div>
       </div>
@@ -348,7 +378,9 @@
 
   </main>
 
-<script>
+<script type="module">
+import { getDisplayBottomLine, getBottomLinePresentation } from './result-bottom-line.js';
+
 (function() {
   'use strict';
 
@@ -475,6 +507,8 @@
     currentReport = data;
     const r = data.report;
 
+    renderBottomLine(r);
+
     // Header
     const truncAddr = data.address.slice(0, 6) + '...' + data.address.slice(-4);
     const ts = new Date(data.timestamp).toLocaleString();
@@ -529,6 +563,27 @@
     renderFindings(r.findings);
   }
 
+  function renderBottomLine(report) {
+    const bottomLine = getDisplayBottomLine(report);
+    const presentation = getBottomLinePresentation(bottomLine);
+    const coverage = presentation.coverageNote
+      ? `<div class="bottom-line-coverage">${esc(presentation.coverageNote)}</div>`
+      : '';
+    const element = $('#bottom-line');
+
+    element.className = `bottom-line-card ${presentation.severityClass}`;
+    element.innerHTML = `
+      <div class="bottom-line-eyebrow">Result</div>
+      <div class="bottom-line-level">
+        <span class="bottom-line-dot" aria-hidden="true"></span>
+        <span>${esc(bottomLine.label)}</span>
+      </div>
+      <div class="bottom-line-sentence">${esc(bottomLine.sentence)}</div>
+      <a class="bottom-line-action" href="${esc(presentation.actionTarget)}">${esc(presentation.actionLabel)}</a>
+      ${coverage}
+    `;
+  }
+
   function renderFilters(report) {
     activeSevFilter = null;
     activeAgentFilter = null;
@@ -580,7 +635,7 @@
       const cls = SEV_CLASS[f.severity] || 'sev-unknown';
       const agentBadges = (f.agents || []).map(a => `<span class="finding-agent-badge">${esc(a)}</span>`).join('');
       return `
-        <div class="finding-card" onclick="toggleFinding(this)">
+        <div id="finding-${esc(f.id)}" class="finding-card" onclick="toggleFinding(this)">
           <div class="finding-header">
             <span class="finding-id">${esc(f.id)}</span>
             <span class="${cls} sev-badge">${esc(f.severity)}</span>
