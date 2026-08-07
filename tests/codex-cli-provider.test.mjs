@@ -33,6 +33,22 @@ test('extractCodexCliText returns empty string when no parseable JSON payload ex
   assert.equal(__internal.extractCodexCliText(stdout), '');
 });
 
+test('buildCodexCliEnvironment removes API-key auth and preserves unrelated variables', () => {
+  const sourceEnv = {
+    PATH: '/usr/bin',
+    CODEX_API_KEY: 'codex-key',
+    OPENAI_API_KEY: 'openai-key',
+    OPENSENTRY_MARKER: 'preserved',
+  };
+
+  assert.deepEqual(__internal.buildCodexCliEnvironment(sourceEnv), {
+    PATH: '/usr/bin',
+    OPENSENTRY_MARKER: 'preserved',
+  });
+  assert.equal(sourceEnv.CODEX_API_KEY, 'codex-key');
+  assert.equal(sourceEnv.OPENAI_API_KEY, 'openai-key');
+});
+
 test('runCodexCli captures the final item.completed payload from a live stdout stream', async () => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
