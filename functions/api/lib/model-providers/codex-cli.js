@@ -65,7 +65,16 @@ function buildCodexCliPrompt(systemPrompt, userMessage) {
 }
 
 
-async function runCodexCli({ spawn, cwd, timeoutMs, schemaPath, model, prompt, killGraceMs = 2_000 }) {
+async function runCodexCli({
+  spawn,
+  cwd,
+  timeoutMs,
+  schemaPath,
+  model,
+  prompt,
+  killGraceMs = 2_000,
+  sourceEnv = process.env,
+}) {
   return new Promise((resolve) => {
     const child = spawn(
       CODEX_CLI_BINARY,
@@ -86,6 +95,9 @@ async function runCodexCli({ spawn, cwd, timeoutMs, schemaPath, model, prompt, k
       ],
       {
         cwd,
+        // codex-cli is the authenticated-session provider. Project-level API
+        // keys must not silently override the user's `codex login` session.
+        env: buildCodexCliEnvironment(sourceEnv),
         stdio: ['pipe', 'pipe', 'pipe'],
       },
     );
@@ -163,6 +175,13 @@ async function runCodexCli({ spawn, cwd, timeoutMs, schemaPath, model, prompt, k
   });
 }
 
+function buildCodexCliEnvironment(sourceEnv) {
+  const childEnv = { ...sourceEnv };
+  delete childEnv.CODEX_API_KEY;
+  delete childEnv.OPENAI_API_KEY;
+  return childEnv;
+}
+
 function extractCodexCliText(stdout) {
   if (typeof stdout !== 'string' || stdout.length === 0) return '';
 
@@ -230,6 +249,7 @@ function normalizeJsonLine(line) {
 
 export { CODEX_CLI_BINARY };
 export const __internal = Object.freeze({
+  buildCodexCliEnvironment,
   extractCodexCliText,
   runCodexCli,
 });
