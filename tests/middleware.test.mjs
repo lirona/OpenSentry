@@ -8,13 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  onRequest,
-  __resetRateLimits,
-  __DEFAULT_DAILY_CAP,
-  __DEFAULT_IP_COOLDOWN_MS,
-  __getRateLimitConfig,
-} from '../functions/api/_middleware.js';
+import { onRequest } from '../functions/api/_middleware.js';
 
 // ---- helpers ---------------------------------------------------------------
 
@@ -54,8 +48,6 @@ function makeContext({
 async function json(res) {
   return res.json();
 }
-
-test.beforeEach(() => __resetRateLimits());
 
 // ---- CORS ------------------------------------------------------------------
 
@@ -196,82 +188,47 @@ test('GET /api/other → passes through (no method guard)', async () => {
   assert.equal(res.status, 200);
 });
 
-// ---- abuse protection ------------------------------------------------------
+// ---- repeated analyses -----------------------------------------------------
 
-test('second request from same IP within default cooldown → 429 ip_cooldown', async () => {
+test('repeated requests from the same IP are accepted immediately', async () => {
   const opts = { contentType: 'application/json', origin: 'https://opensentry.tech', ip: '10.0.0.1' };
 
   const first = await onRequest(makeContext(opts));
-  assert.equal(first.status, 200);
-
   const second = await onRequest(makeContext(opts));
-  assert.equal(second.status, 429);
-  const body = await json(second);
-  assert.equal(body.error, 'ip_cooldown');
-  assert.ok(second.headers.get('Retry-After'));
-});
-
-test('different IPs are independent', async () => {
-  const base = { contentType: 'application/json', origin: 'https://opensentry.tech' };
-
-  const a = await onRequest(makeContext({ ...base, ip: '10.0.0.1' }));
-  assert.equal(a.status, 200);
-
-  const b = await onRequest(makeContext({ ...base, ip: '10.0.0.2' }));
-  assert.equal(b.status, 200);
-});
-
-test('daily cap is disabled by default', async () => {
-  const base = { contentType: 'application/json', origin: 'https://opensentry.tech' };
-
-  for (let i = 0; i < 4; i++) {
-    const res = await onRequest(makeContext({ ...base, ip: `192.168.0.${i}` }));
-    assert.equal(res.status, 200);
-  }
-});
-
-test('configured daily cap blocks requests beyond ANALYZE_DAILY_CAP', async () => {
-  const base = {
-    contentType: 'application/json',
-    origin: 'https://opensentry.tech',
-    env: { ANALYZE_DAILY_CAP: '2', ANALYZE_IP_COOLDOWN_MS: '0' },
-  };
-
-  const first = await onRequest(makeContext({ ...base, ip: '192.168.0.1' }));
-  const second = await onRequest(makeContext({ ...base, ip: '192.168.0.2' }));
-  const over = await onRequest(makeContext({ ...base, ip: '192.168.0.3' }));
 
   assert.equal(first.status, 200);
   assert.equal(second.status, 200);
-  assert.equal(over.status, 429);
-  const body = await json(over);
-  assert.equal(body.error, 'daily_limit');
-  assert.ok(over.headers.get('Retry-After'));
+  assert.equal(second.headers.get('Retry-After'), null);
 });
 
-test('ANALYZE_IP_COOLDOWN_MS=0 disables the cooldown', async () => {
+test('legacy limit environment variables do not restrict analyses', async () => {
+  const base = {
+    contentType: 'application/json',
+    origin: 'https://opensentry.tech',
+    env: { ANALYZE_DAILY_CAP: '1', ANALYZE_IP_COOLDOWN_MS: '60000' },
+  };
+
+  for (let i = 0; i < 4; i++) {
+    const res = await onRequest(makeContext({ ...base, ip: '192.168.0.1' }));
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('Retry-After'), null);
+  }
+});
+
+test('a failed analysis does not prevent an immediate retry', async () => {
   const opts = {
     contentType: 'application/json',
     origin: 'https://opensentry.tech',
     ip: '10.0.0.1',
-    env: { ANALYZE_IP_COOLDOWN_MS: '0' },
+    nextThrows: new Error('temporary failure'),
   };
 
-  const first = await onRequest(makeContext(opts));
-  const second = await onRequest(makeContext(opts));
+  const failed = await onRequest(makeContext(opts));
+  const retry = await onRequest(makeContext({ ...opts, nextThrows: undefined }));
 
-  assert.equal(first.status, 200);
-  assert.equal(second.status, 200);
-});
-
-test('rate-limit config falls back to safe defaults on invalid env', () => {
-  assert.deepEqual(__getRateLimitConfig({
-    ANALYZE_IP_COOLDOWN_MS: '-5',
-    ANALYZE_DAILY_CAP: 'nope',
-  }), {
-    ipCooldownMs: __DEFAULT_IP_COOLDOWN_MS,
-    dailyCap: __DEFAULT_DAILY_CAP,
-  });
+  assert.equal(failed.status, 500);
+  assert.equal(retry.status, 200);
+  assert.equal(retry.headers.get('Retry-After'), null);
 });
 
 // ---- error handling --------------------------------------------------------

@@ -99,15 +99,6 @@
     .btn-analyze:hover:not(:disabled) { opacity: .9; }
     .btn-analyze:disabled { opacity: .4; cursor: not-allowed; }
 
-    .cooldown-bar {
-      margin-top: 12px; font-size: 12px; color: #888; text-align: center; display: none;
-    }
-    .cooldown-bar.visible { display: block; }
-
-    .quota-indicator {
-      margin-top: 16px; font-size: 12px; color: #666; text-align: center;
-    }
-
     /* ── Loading Section ── */
     #loading-section { padding: 60px 0; }
     .loading-header { text-align: center; margin-bottom: 32px; }
@@ -314,8 +305,6 @@
           </div>
           <button type="submit" id="analyze-btn" class="btn-analyze">Analyze</button>
         </form>
-        <div id="cooldown-bar" class="cooldown-bar"></div>
-        <div id="quota-indicator" class="quota-indicator"></div>
       </div>
     </section>
 
@@ -387,16 +376,12 @@
   };
 
   const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
-  const COOLDOWN_SEC = 60;
-  const QUOTA_KEY = 'os_quota';
   const ANALYZE_API_URL = 'https://opensentry.pages.dev/api/analyze';
 
   const ERROR_MAP = {
     invalid_address:  { icon: '\u26A0\uFE0F', title: 'Invalid Address', msg: 'Please enter a valid 0x-prefixed 40-character hex address.' },
     unsupported_chain:{ icon: '\u26A0\uFE0F', title: 'Unsupported Chain', msg: 'The selected chain is not supported. Choose Ethereum, Base, Arbitrum, Optimism, or Polygon.' },
     unverified:       { icon: '\u{1F50D}', title: 'Unverified Contract', msg: 'This contract\'s source code is not verified on the block explorer. OpenSentry requires verified source code to perform analysis.' },
-    daily_limit:      { icon: '\u23F0', title: 'Daily Limit Reached', msg: 'The daily analysis limit has been reached. This resets at midnight UTC. Please try again tomorrow.' },
-    ip_cooldown:      { icon: '\u23F3', title: 'Please Wait', msg: 'You recently submitted an analysis. Please wait before trying again.' },
     missing_api_key:  { icon: '\u{1F511}', title: 'Configuration Error', msg: 'The server is missing a required API key. Please contact the administrator.' },
     invalid_relay_config:{ icon: '\u{1F6E0}\uFE0F', title: 'Configuration Error', msg: 'The analysis relay is not configured correctly. Please contact the administrator.' },
     invalid_relay_url:{ icon: '\u{1F6E0}\uFE0F', title: 'Configuration Error', msg: 'The analysis relay address is invalid. Please contact the administrator.' },
@@ -411,15 +396,10 @@
   const form         = $('#analyze-form');
   const addrInput    = $('#address-input');
   const chainSelect  = $('#chain-select');
-  const analyzeBtn   = $('#analyze-btn');
   const addrError    = $('#address-error');
-  const cooldownBar  = $('#cooldown-bar');
-  const quotaEl      = $('#quota-indicator');
 
   // ── State ──────────────────────────────────────────────────────────────────
 
-  let cooldownTimer  = null;
-  let cooldownSec    = 0;
   let currentReport  = null;
   let activeSevFilter  = null;
   let activeAgentFilter = null;
@@ -430,60 +410,6 @@
     document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
     $('#' + id).classList.add('active');
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
-
-  // ── Quota tracking (localStorage-based, approximate) ───────────────────────
-
-  function getQuota() {
-    try {
-      const raw = localStorage.getItem(QUOTA_KEY);
-      if (!raw) return { date: todayUTC(), used: 0 };
-      const q = JSON.parse(raw);
-      if (q.date !== todayUTC()) return { date: todayUTC(), used: 0 };
-      return q;
-    } catch { return { date: todayUTC(), used: 0 }; }
-  }
-
-  function bumpQuota() {
-    const q = getQuota();
-    q.used++;
-    localStorage.setItem(QUOTA_KEY, JSON.stringify(q));
-    renderQuota();
-  }
-
-  function renderQuota() {
-    const q = getQuota();
-    const remaining = Math.max(0, 30 - q.used);
-    quotaEl.textContent = remaining > 0
-      ? `${remaining} analyses remaining today`
-      : 'Daily analysis limit reached. Resets at midnight UTC.';
-  }
-
-  function todayUTC() {
-    return new Date().toISOString().slice(0, 10);
-  }
-
-  // ── Cooldown ───────────────────────────────────────────────────────────────
-
-  function startCooldown() {
-    cooldownSec = COOLDOWN_SEC;
-    analyzeBtn.disabled = true;
-    cooldownBar.classList.add('visible');
-    tickCooldown();
-    cooldownTimer = setInterval(tickCooldown, 1000);
-  }
-
-  function tickCooldown() {
-    if (cooldownSec <= 0) {
-      clearInterval(cooldownTimer);
-      cooldownTimer = null;
-      analyzeBtn.disabled = false;
-      cooldownBar.classList.remove('visible');
-      cooldownBar.textContent = '';
-      return;
-    }
-    cooldownBar.textContent = `Please wait ${cooldownSec}s before next analysis`;
-    cooldownSec--;
   }
 
   // ── Validation ─────────────────────────────────────────────────────────────
@@ -733,14 +659,12 @@
   window.resetToInput = function() {
     currentReport = null;
     showSection('input-section');
-    renderQuota();
   };
 
   // ── Main submit flow ───────────────────────────────────────────────────────
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (analyzeBtn.disabled) return;
     if (!validateAddress()) return;
 
     const address = addrInput.value.trim();
@@ -770,14 +694,10 @@
 
       if (!res.ok || !data.success) {
         showError(data.error, data.message);
-        startCooldown();
         return;
       }
 
       // Success
-      bumpQuota();
-      startCooldown();
-
       // Brief pause to let the user see the agents flip to their final state.
       updateAgentCards(data.report);
       await new Promise(r => setTimeout(r, 600));
@@ -788,13 +708,11 @@
     } catch (err) {
       clearInterval(progressInterval);
       showError('internal_error', 'Network error. Please check your connection and try again.');
-      startCooldown();
     }
   });
 
   // ── Init ───────────────────────────────────────────────────────────────────
 
-  renderQuota();
   addrInput.addEventListener('input', hideAddrError);
 
 })();

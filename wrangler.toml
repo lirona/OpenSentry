@@ -21,8 +21,6 @@ pages_build_output_dir = "./website"
 #   AI_API_KEY="..."
 #   AI_MODEL="..."
 #   AI_AGENT_CONCURRENCY="1"
-#   ANALYZE_IP_COOLDOWN_MS="15000"
-#   ANALYZE_DAILY_CAP="0"
 #   ANALYZE_RELAY_URL="https://your-local-runner.example/api/analyze"
 #   ANALYZE_RELAY_TOKEN="..."
 #   ETHERSCAN_API_KEY="..."
@@ -36,8 +34,6 @@ pages_build_output_dir = "./website"
 # Optional plain-text / secret bindings:
 #   - AI_MODEL
 #   - AI_AGENT_CONCURRENCY
-#   - ANALYZE_IP_COOLDOWN_MS
-#   - ANALYZE_DAILY_CAP
 #   - ANALYZE_RELAY_URL
 #   - ANALYZE_RELAY_TOKEN
 #

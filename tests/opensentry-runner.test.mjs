@@ -10,7 +10,6 @@ import {
 const TOKEN = 'runner-secret';
 const BASE_ENV = {
   ANALYZE_RELAY_TOKEN: TOKEN,
-  ANALYZE_IP_COOLDOWN_MS: '0',
 };
 
 test('runner refuses to start without ANALYZE_RELAY_TOKEN', () => {

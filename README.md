@@ -67,8 +67,6 @@ Edit `.dev.vars` and fill in your keys:
 | `AI_TOTAL_BUDGET_MS` | Optional per-agent total timeout override in milliseconds. Useful for slower local providers like `codex-cli` or `claude-cli` |
 | `AI_PER_ATTEMPT_TIMEOUT_MS` | Optional per-attempt timeout override in milliseconds |
 | `AI_AGENT_CONCURRENCY` | Optional model-call concurrency. Defaults to `1` for free-tier friendliness |
-| `ANALYZE_IP_COOLDOWN_MS` | Optional per-IP cooldown in milliseconds. Set `0` to disable |
-| `ANALYZE_DAILY_CAP` | Optional global daily cap. Set `0` to disable |
 | `ANALYZE_RELAY_URL` | Optional production relay target. If set, `/api/analyze` forwards requests to this URL instead of running analysis in Cloudflare |
 | `ANALYZE_RELAY_TOKEN` | Optional shared secret sent from the public relay to the local runner as `x-opensentry-runner-token` |
 | `ETHERSCAN_API_KEY` | [Etherscan](https://etherscan.io/apis) — free tier is sufficient. One key works across all chains via V2 API |
