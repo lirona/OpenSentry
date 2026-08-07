@@ -448,6 +448,10 @@ test('happy path: all agents SAFE → 200 with full report shape', async () => {
     assert.equal(r.infoCount, 0);
     assert.deepEqual(r.findings, []);
     assert.equal(r.agentSummaries.length, 8);
+    assert.equal(r.bottomLine.level, 'NO_CONCERN');
+    assert.equal(r.bottomLine.label, 'No concern');
+    assert.equal(r.bottomLine.sentence, 'We didn\'t find any major security concerns with this contract.');
+    assert.equal(r.bottomLine.generated, false);
 
     for (const s of r.agentSummaries) {
       assert.equal(s.status, 'completed');
@@ -549,6 +553,9 @@ test('some agents fail → report still returns with partial results', async () 
     assert.equal(r.warningCount, 1);
     assert.equal(r.findings.length, 1);
     assert.equal(r.findings[0].id, 'OS-001');
+    assert.equal(r.bottomLine.level, 'SOME_CONCERNS');
+    assert.equal(r.bottomLine.generated, false);
+    assert.equal(r.bottomLine.coverage.status, 'partial');
 
     // First agent completed; rest failed.
     assert.equal(r.agentSummaries[0].status, 'completed');

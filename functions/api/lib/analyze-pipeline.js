@@ -3,6 +3,7 @@ import { buildSystemPrompt } from './prompt-wrapper.js';
 import { runAgent, resolveModelProvider } from './agent-runner.js';
 import { runCompilerFactsStage } from './compiler-facts-stage.js';
 import { mergeResults } from './merge-results.js';
+import { buildBottomLine } from './bottom-line.js';
 
 const DEFAULT_AGENT_CONCURRENCY = 1;
 
@@ -55,9 +56,15 @@ export async function analyzeContractSourceWithOptions({
     deterministicFindingIdsSupplied: deterministicFindingIds,
   }));
 
-  const report = mergeResults(agentRuns, {
+  const mergedReport = mergeResults(agentRuns, {
     deterministicFindings: compilerFacts.deterministicFindings,
   });
+  const bottomLine = await buildBottomLine({
+    report: mergedReport,
+    env,
+    metadata,
+  });
+  const report = { ...mergedReport, bottomLine };
   const analysis = {
     contractName: sourceResult.contractName,
     address,

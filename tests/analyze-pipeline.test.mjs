@@ -33,6 +33,24 @@ function geminiSafe(agentName) {
   };
 }
 
+function geminiBottomLine(severity, summary) {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({
+      candidates: [{
+        content: { parts: [{ text: JSON.stringify({
+          agent: 'Bottom Line',
+          severity,
+          summary,
+          findings: [],
+        }) }] },
+        finishReason: 'STOP',
+      }],
+    }),
+  };
+}
+
 const SOURCE_RESULT = {
   success: true,
   contractName: 'Vault',
@@ -102,6 +120,9 @@ test('analyzeContractSource returns merged analysis without trace by default', {
     assert.equal(calls, 8);
     assert.equal(result.contractName, 'Vault');
     assert.equal(result.report.overallSeverity, 'SAFE');
+    assert.equal(result.report.bottomLine.level, 'NO_CONCERN');
+    assert.equal(result.report.bottomLine.label, 'No concern');
+    assert.equal(result.report.bottomLine.generated, false);
     assert.equal('trace' in result, false);
   } finally {
     restore();
@@ -142,6 +163,9 @@ test('analyzeContractSourceWithOptions includes trace data and serializes failed
     assert.deepEqual(result.trace.agentRuns[0].deterministicFindingIdsSupplied, []);
     assert.equal(result.trace.agentRuns[0].settled.status, 'fulfilled');
     assert.equal(result.trace.agentRuns[0].settled.value.ok, false);
+    assert.equal(result.report.bottomLine.level, null);
+    assert.equal(result.report.bottomLine.label, 'Result incomplete');
+    assert.equal(result.report.bottomLine.coverage.status, 'partial');
   } finally {
     restore();
   }
@@ -165,6 +189,7 @@ test('analyzeContractSourceWithOptions falls back cleanly when compiler facts ar
 
     assert.equal(calls, 8);
     assert.equal(result.report.overallSeverity, 'SAFE');
+    assert.equal(result.report.bottomLine.level, 'NO_CONCERN');
     assert.equal(result.trace.factsStage.status, 'unavailable');
     assert.deepEqual(result.trace.deterministicFindings, []);
     assert.equal(result.trace.agentRuns[0].usedDeterministicContext, false);
@@ -179,6 +204,12 @@ test('analyzeContractSourceWithOptions includes deterministic findings in trace 
   let calls = 0;
   const restore = stubFetch(async () => {
     calls++;
+    if (calls === 9) {
+      return geminiBottomLine(
+        'CRITICAL',
+        'We found serious risks: the contract owner can take all transferred value by setting fees to the maximum.',
+      );
+    }
     return geminiSafe('Access Control');
   });
 
@@ -191,12 +222,15 @@ test('analyzeContractSourceWithOptions includes deterministic findings in trace 
       includeTrace: true,
     });
 
-    assert.equal(calls, 8);
+    assert.equal(calls, 9);
     assert.equal(result.trace.factsStage.status, 'ok');
     assert.equal(result.trace.factsStage.selectedCompilerVersion, '0.8.20');
     assert.ok(Array.isArray(result.trace.factsStage.facts.feeControls));
     assert.ok(result.trace.deterministicFindings.some((entry) => entry.ruleId === 'fee-uncapped-100'));
     assert.equal(result.report.overallSeverity, 'CRITICAL');
+    assert.equal(result.report.bottomLine.level, 'HIGH_RISK');
+    assert.equal(result.report.bottomLine.generated, true);
+    assert.match(result.report.bottomLine.sentence, /take all transferred value/);
     assert.ok(result.report.findings.some((entry) => entry.agents.includes('Compiler Facts')));
     assert.deepEqual(result.trace.agentRuns[0].deterministicFindingIdsSupplied, ['fee-uncapped-100']);
   } finally {
