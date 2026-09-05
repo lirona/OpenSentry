@@ -1,3 +1,5 @@
+import { isAnalysisJobId } from './analysis-job-contract.js';
+
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 const SUPPORTED_CHAINS = new Set(['ethereum', 'base', 'arbitrum', 'optimism', 'polygon']);
 
@@ -13,7 +15,15 @@ export async function parseAnalyzeRequest(request) {
     });
   }
 
-  const { address, chain } = body || {};
+  const { jobId, address, chain } = body || {};
+
+  if (!isAnalysisJobId(jobId)) {
+    return invalidRequest(400, {
+      success: false,
+      error: 'invalid_job_id',
+      message: 'The analysis job ID is invalid.',
+    });
+  }
 
   if (typeof address !== 'string' || !ADDRESS_RE.test(address)) {
     return invalidRequest(400, {
@@ -33,14 +43,17 @@ export async function parseAnalyzeRequest(request) {
 
   return {
     ok: true,
-    body: { address, chain },
+    body: { jobId, address, chain },
   };
 }
 
 export function jsonResponse(status, body) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8' },
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+    },
   });
 }
 

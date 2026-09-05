@@ -8,7 +8,7 @@
 import { parseAnalyzeRequest, jsonResponse } from './lib/analyze-request.js';
 import {
   getAnalyzeRelayEndpoint,
-  relayAnalyzeRequest,
+  relayAnalysisJobCreation,
 } from './lib/analyze-relay.js';
 
 export async function onRequestPost(context) {
@@ -33,7 +33,7 @@ export async function onRequestPost(context) {
     });
   }
 
-  return relayAnalyzeRequest({
+  return relayAnalysisJobCreation({
     request,
     body: parsed.body,
     endpoint: relay.endpoint,

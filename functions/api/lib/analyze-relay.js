@@ -44,6 +44,7 @@ export function getAnalyzeRelayEndpoint(env) {
   if (endpoint.pathname === '' || endpoint.pathname === '/') {
     endpoint.pathname = '/api/analyze';
   }
+  endpoint.pathname = endpoint.pathname.replace(/\/$/, '');
 
   return {
     configured: true,
@@ -69,9 +70,31 @@ export function checkRunnerToken(request, env) {
   });
 }
 
-export async function relayAnalyzeRequest({ request, body, endpoint, env }) {
-  const target = String(endpoint);
-  if (sameOrigin(request.url, target)) {
+export async function relayAnalysisJobCreation({ request, body, endpoint, env }) {
+  return relayRunnerRequest({
+    request,
+    target: endpoint,
+    env,
+    method: 'POST',
+    body,
+  });
+}
+
+export async function relayAnalysisJobStatus({ request, jobId, endpoint, env }) {
+  const target = new URL(endpoint);
+  target.pathname = `${target.pathname}/${encodeURIComponent(jobId)}`;
+
+  return relayRunnerRequest({
+    request,
+    target,
+    env,
+    method: 'GET',
+  });
+}
+
+async function relayRunnerRequest({ request, target, env, method, body }) {
+  const targetUrl = String(target);
+  if (sameOrigin(request.url, targetUrl)) {
     return jsonResponse(500, {
       success: false,
       error: 'relay_loop',
@@ -92,34 +115,79 @@ export async function relayAnalyzeRequest({ request, body, endpoint, env }) {
 
   let res;
   try {
-    res = await fetch(target, {
-      method: 'POST',
+    res = await fetch(targetUrl, {
+      method,
       headers,
-      body: JSON.stringify(body),
+      redirect: 'manual',
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
   } catch {
-    return jsonResponse(502, {
-      success: false,
-      error: 'relay_unavailable',
-      message: 'Local runner is unavailable. Make sure your desktop server and tunnel are running.',
-    });
+    return relayUnavailableResponse();
   }
 
   const contentType = res.headers.get('content-type') || '';
-  if (!contentType.toLowerCase().includes('application/json')) {
-    return jsonResponse(502, {
+  let responseText;
+  try {
+    responseText = await res.text();
+  } catch {
+    return relayUnavailableResponse();
+  }
+  if (res.status === 504 || res.status === 524) {
+    return invalidRunnerResponse(res.status);
+  }
+  if (res.status === 502) return relayUnavailableResponse();
+  if (!contentType.toLowerCase().includes('application/json') || !isJson(responseText)) {
+    return invalidRunnerResponse(res.status);
+  }
+
+  const responseHeaders = {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+  };
+  const location = res.headers.get('location');
+  if (location) responseHeaders.location = location;
+
+  return new Response(responseText, {
+    status: res.status,
+    headers: responseHeaders,
+  });
+}
+
+function invalidRunnerResponse(status) {
+  if (status === 504 || status === 524) {
+    return jsonResponse(504, {
       success: false,
-      error: 'relay_bad_response',
-      message: 'Local runner returned a non-JSON response.',
+      error: 'relay_timeout',
+      message: 'The connection to the local runner timed out. The audit may still be running.',
     });
   }
 
-  return new Response(await res.text(), {
-    status: res.status,
-    headers: {
-      'content-type': 'application/json; charset=utf-8',
-    },
+  if (status >= 500) {
+    return relayUnavailableResponse();
+  }
+
+  return jsonResponse(502, {
+    success: false,
+    error: 'relay_bad_response',
+    message: 'Local runner returned an invalid JSON response.',
   });
+}
+
+function relayUnavailableResponse() {
+  return jsonResponse(502, {
+    success: false,
+    error: 'relay_unavailable',
+    message: 'Local runner is unavailable. Make sure your desktop server and tunnel are running.',
+  });
+}
+
+function isJson(value) {
+  try {
+    JSON.parse(value);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function getRunnerToken(env) {
@@ -141,6 +209,16 @@ function sameOrigin(left, right) {
 function jsonResponse(status, body) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8' },
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+    },
   });
 }
+
+export const __internal = Object.freeze({
+  RUNNER_TOKEN_HEADER,
+  relayRunnerRequest,
+  invalidRunnerResponse,
+  isJson,
+});
