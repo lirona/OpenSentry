@@ -2,10 +2,11 @@
 //
 // Responsibilities:
 //   1. CORS — opensentry.tech + localhost origins, preflight support
-//   2. Request validation — POST + application/json for /api/analyze
+//   2. Request validation — POST create and GET status requests for /api/analyze
 //   3. Error handling — unhandled exceptions → clean 500
 
 import { checkRunnerToken } from './lib/analyze-relay.js';
+import { isAnalysisJobStatusPath } from './lib/analysis-job-contract.js';
 
 // ---- CORS config -----------------------------------------------------------
 
@@ -24,7 +25,7 @@ function isAllowedOrigin(origin) {
 function corsHeaders(origin) {
   return {
     'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Max-Age': '86400', // 24 h
   };
@@ -50,10 +51,10 @@ export async function onRequest(context) {
   }
 
   // ---- /api/analyze-specific guards -----------------------------------------
-  const isAnalyze = url.pathname === '/api/analyze';
+  const isAnalyzeCreate = url.pathname === '/api/analyze';
+  const isAnalyzeStatus = isAnalysisJobStatusPath(url.pathname);
 
-  if (isAnalyze) {
-    // Method check — only POST.
+  if (isAnalyzeCreate) {
     if (request.method !== 'POST') {
       return jsonResponse(405, { error: 'method_not_allowed', message: 'Use POST.' }, allowed ? origin : null);
     }
@@ -63,7 +64,11 @@ export async function onRequest(context) {
     if (!ct.includes('application/json')) {
       return jsonResponse(415, { error: 'unsupported_media_type', message: 'Content-Type must be application/json.' }, allowed ? origin : null);
     }
+  } else if (isAnalyzeStatus && request.method !== 'GET') {
+    return jsonResponse(405, { error: 'method_not_allowed', message: 'Use GET.' }, allowed ? origin : null);
+  }
 
+  if (isAnalyzeCreate || isAnalyzeStatus) {
     const runnerTokenError = checkRunnerToken(request, env);
     if (runnerTokenError) {
       return withCors(runnerTokenError, allowed ? origin : null);
@@ -96,6 +101,7 @@ export async function onRequest(context) {
 function jsonResponse(status, body, origin, extraHeaders = {}) {
   const headers = {
     'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
     ...extraHeaders,
   };
   if (origin) {

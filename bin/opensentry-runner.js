@@ -3,7 +3,20 @@
 import http from 'node:http';
 
 import { onRequest as applyMiddleware } from '../functions/api/_middleware.js';
-import { onRequestPost as analyzeRequest } from '../functions/api/lib/local-analyze.js';
+import {
+  ANALYSIS_JOB_STATUS,
+  getAnalysisJobIdFromPath,
+  isAnalysisJobStatusPath,
+} from '../functions/api/lib/analysis-job-contract.js';
+import { createAnalysisJobStore } from '../functions/api/lib/analysis-job-store.js';
+import {
+  AnalysisJobConflictError,
+  AnalysisJobManagerUnavailableError,
+  AnalysisJobQueueFullError,
+  createAnalysisJobManager,
+} from '../functions/api/lib/analysis-jobs.js';
+import { parseAnalyzeRequest } from '../functions/api/lib/analyze-request.js';
+import { runLocalAnalysis } from '../functions/api/lib/local-analyze.js';
 
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = 8788;
@@ -11,10 +24,29 @@ const MAX_REQUEST_BYTES = 64 * 1024;
 
 export function createRunnerServer(options = {}) {
   const env = options.env || process.env;
-  const analyzeHandler = options.analyzeHandler || analyzeRequest;
   assertRunnerEnvironment(env);
+  let analysisJobManager = options.analysisJobManager || null;
+  let analysisJobStartupError = null;
 
-  return http.createServer(async (incoming, outgoing) => {
+  function initializeAnalysisJobs() {
+    if (analysisJobManager || analysisJobStartupError) return analysisJobManager;
+    try {
+      analysisJobManager = createAnalysisJobManager({
+        store: options.analysisJobStore || createAnalysisJobStore({
+          databasePath: options.databasePath,
+        }),
+        executor: options.analysisExecutor || (({ address, chain }) => (
+          runLocalAnalysis({ address, chain, env })
+        )),
+      });
+      return analysisJobManager;
+    } catch (error) {
+      analysisJobStartupError = error;
+      throw error;
+    }
+  }
+
+  const server = http.createServer(async (incoming, outgoing) => {
     try {
       const request = await buildWebRequest(incoming, {
         maxRequestBytes: options.maxRequestBytes || MAX_REQUEST_BYTES,
@@ -22,7 +54,7 @@ export function createRunnerServer(options = {}) {
       const response = await applyMiddleware({
         request,
         env,
-        next: () => routeRequest(request, env, analyzeHandler),
+        next: () => routeRequest(request, analysisJobManager),
       });
       await sendWebResponse(outgoing, response);
     } catch (error) {
@@ -46,6 +78,27 @@ export function createRunnerServer(options = {}) {
       await sendWebResponse(outgoing, jsonResponse(status, body));
     }
   });
+
+  server.prependOnceListener('listening', () => {
+    try {
+      initializeAnalysisJobs();
+    } catch {
+      server.close();
+    }
+  });
+
+  Object.defineProperties(server, {
+    analysisJobManager: {
+      get: () => analysisJobManager,
+      enumerable: false,
+    },
+    analysisJobStartupError: {
+      get: () => analysisJobStartupError,
+      enumerable: false,
+    },
+  });
+
+  return server;
 }
 
 export function assertRunnerEnvironment(env) {
@@ -57,7 +110,7 @@ export function assertRunnerEnvironment(env) {
   }
 }
 
-async function routeRequest(request, env, analyzeHandler) {
+async function routeRequest(request, analysisJobManager) {
   const url = new URL(request.url);
 
   if (url.pathname === '/api/health') {
@@ -75,7 +128,61 @@ async function routeRequest(request, env, analyzeHandler) {
         message: 'Only POST is allowed.',
       });
     }
-    return analyzeHandler({ request, env });
+    const parsed = await parseAnalyzeRequest(request);
+    if (!parsed.ok) return parsed.response;
+
+    let job;
+    try {
+      job = analysisJobManager.submit(parsed.body);
+    } catch (error) {
+      const response = analysisJobManagerErrorResponse(error);
+      if (response) return response;
+      throw error;
+    }
+
+    return jsonResponse(202, {
+      success: true,
+      ...job,
+    }, {
+      location: `/api/analyze/${job.jobId}`,
+    });
+  }
+
+  if (isAnalysisJobStatusPath(url.pathname)) {
+    if (request.method !== 'GET') {
+      return jsonResponse(405, {
+        success: false,
+        error: 'method_not_allowed',
+        message: 'Only GET is allowed.',
+      });
+    }
+
+    const jobId = getAnalysisJobIdFromPath(url.pathname);
+    if (!jobId) {
+      return jsonResponse(400, {
+        success: false,
+        error: 'invalid_job_id',
+        message: 'The analysis job ID is invalid.',
+      });
+    }
+
+    let job;
+    try {
+      job = analysisJobManager.getJob(jobId);
+    } catch (error) {
+      const response = analysisJobManagerErrorResponse(error);
+      if (response) return response;
+      throw error;
+    }
+    if (!job) {
+      return jsonResponse(404, {
+        success: false,
+        error: 'job_not_found',
+        message: 'This analysis job could not be found.',
+      });
+    }
+
+    return analysisJobResponse(job);
   }
 
   return jsonResponse(404, {
@@ -83,6 +190,73 @@ async function routeRequest(request, env, analyzeHandler) {
     error: 'not_found',
     message: 'Route not found.',
   });
+}
+
+function analysisJobManagerErrorResponse(error) {
+  if (error instanceof AnalysisJobConflictError) {
+    return jsonResponse(409, {
+      success: false,
+      error: error.code,
+      message: error.message,
+    });
+  }
+
+  if (
+    error instanceof AnalysisJobQueueFullError
+    || error instanceof AnalysisJobManagerUnavailableError
+  ) {
+    return jsonResponse(503, {
+      success: false,
+      error: error.code,
+      message: error.message,
+    });
+  }
+
+  return null;
+}
+
+function analysisJobResponse(job) {
+  if (job.status === ANALYSIS_JOB_STATUS.EXPIRED) {
+    return jsonResponse(410, {
+      success: false,
+      jobId: job.jobId,
+      status: job.status,
+      error: 'job_expired',
+      message: 'This analysis job has expired. Please start a new analysis.',
+    });
+  }
+
+  if (job.status === ANALYSIS_JOB_STATUS.FAILED) {
+    return jsonResponse(200, {
+      success: false,
+      jobId: job.jobId,
+      status: job.status,
+      error: job.error.code,
+      message: job.error.message,
+    });
+  }
+
+  if (job.status === ANALYSIS_JOB_STATUS.SUCCEEDED) {
+    return jsonResponse(200, {
+      success: true,
+      jobId: job.jobId,
+      status: job.status,
+      result: job.result,
+    });
+  }
+
+  if (
+    job.status === ANALYSIS_JOB_STATUS.QUEUED
+    || job.status === ANALYSIS_JOB_STATUS.RUNNING
+  ) {
+    return jsonResponse(200, {
+      success: true,
+      jobId: job.jobId,
+      status: job.status,
+    });
+  }
+
+  throw new Error(`Unsupported analysis job status: ${job.status}`);
 }
 
 async function buildWebRequest(incoming, { maxRequestBytes }) {
@@ -124,11 +298,13 @@ async function sendWebResponse(outgoing, response) {
   outgoing.end(body);
 }
 
-function jsonResponse(status, body) {
+function jsonResponse(status, body, extraHeaders = {}) {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      ...extraHeaders,
     },
   });
 }
@@ -145,6 +321,8 @@ export const __internal = Object.freeze({
   buildWebRequest,
   readRequestBody,
   sendWebResponse,
+  analysisJobResponse,
+  analysisJobManagerErrorResponse,
 });
 
 if (import.meta.url === `file://${process.argv[1]}`) {
@@ -153,12 +331,26 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const server = createRunnerServer();
 
   server.listen(port, host, () => {
+    if (server.analysisJobStartupError) {
+      console.error('OpenSentry runner failed to initialize:', server.analysisJobStartupError);
+      process.exitCode = 1;
+      return;
+    }
     console.log(`OpenSentry runner listening on http://${host}:${port}`);
   });
 
+  let closing = false;
   const close = () => {
-    server.close(() => {
-      process.exitCode = 0;
+    if (closing) return;
+    closing = true;
+    server.close(async () => {
+      try {
+        await server.analysisJobManager?.close();
+        process.exitCode = 0;
+      } catch (error) {
+        console.error('OpenSentry runner shutdown failed:', error);
+        process.exitCode = 1;
+      }
     });
   };
 

@@ -19,6 +19,7 @@
     "wrangler": "^4.81.0"
   },
   "dependencies": {
+    "better-sqlite3": "^12.11.1",
     "semver": "^7.7.4",
     "solc-0-4-26": "npm:solc@^0.4.26",
     "solc-0-5-17": "npm:solc@^0.5.17",

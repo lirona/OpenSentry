@@ -132,6 +132,9 @@
       height: 100%; background: #F5F547; border-radius: 2px;
       transition: width .3s ease;
     }
+    .loading-controls { text-align: center; }
+    .loading-controls .btn-new-analysis { margin-top: 20px; }
+    .loading-note { margin-top: 8px; color: #666; font-size: 12px; }
 
     /* ── Results Section ── */
     #results-section { padding: 40px 0 80px; }
@@ -347,6 +350,10 @@
       <div class="progress-bar-track">
         <div id="progress-fill" class="progress-bar-fill" style="width:0%"></div>
       </div>
+      <div class="loading-controls">
+        <button class="btn-new-analysis" onclick="resetToInput()">Stop waiting</button>
+        <div class="loading-note">The queued audit will continue on the local runner.</div>
+      </div>
     </section>
 
     <!-- ════ Results Section ════ -->
@@ -379,6 +386,14 @@
   </main>
 
 <script type="module">
+import {
+  clearActiveAuditJob,
+  createAuditJobId,
+  isAbortError,
+  loadActiveAuditJob,
+  runAuditJob,
+  saveActiveAuditJob,
+} from './audit-job-client.js';
 import { getDisplayBottomLine, getBottomLinePresentation } from './result-bottom-line.js';
 
 (function() {
@@ -418,7 +433,14 @@ import { getDisplayBottomLine, getBottomLinePresentation } from './result-bottom
     invalid_relay_config:{ icon: '\u{1F6E0}\uFE0F', title: 'Configuration Error', msg: 'The analysis relay is not configured correctly. Please contact the administrator.' },
     invalid_relay_url:{ icon: '\u{1F6E0}\uFE0F', title: 'Configuration Error', msg: 'The analysis relay address is invalid. Please contact the administrator.' },
     relay_unavailable:{ icon: '\u{1F50C}', title: 'Analysis Runner Offline', msg: 'The analysis runner is currently unavailable. Please try again later.' },
+    relay_timeout:    { icon: '\u23F1\uFE0F', title: 'Analysis Runner Timeout', msg: 'The connection to the local runner timed out. The audit may still be running.' },
     relay_bad_response:{ icon: '\u26A0\uFE0F', title: 'Invalid Runner Response', msg: 'The analysis runner returned an invalid response. Please try again later.' },
+    job_not_found:    { icon: '\u{1F50D}', title: 'Analysis Not Found', msg: 'This analysis job could not be found. Please start a new analysis.' },
+    job_expired:      { icon: '\u231B', title: 'Analysis Expired', msg: 'This analysis job has expired. Please start a new analysis.' },
+    analysis_interrupted:{ icon: '\u26A0\uFE0F', title: 'Analysis Interrupted', msg: 'The local runner restarted before this analysis completed. Please start a new analysis.' },
+    analysis_queue_full:{ icon: '\u231B', title: 'Analysis Queue Full', msg: 'The local analysis queue is full. Please try again later.' },
+    analysis_job_conflict:{ icon: '\u26A0\uFE0F', title: 'Analysis Request Conflict', msg: 'This analysis job ID is already associated with a different request. Please start a new analysis.' },
+    analysis_job_manager_unavailable:{ icon: '\u{1F6E0}\uFE0F', title: 'Runner Restart Required', msg: 'The local analysis job store encountered an error. Restart the local runner and try again.' },
     internal_error:   { icon: '\u{1F6A8}', title: 'Server Error', msg: 'An unexpected error occurred. Please try again later.' },
   };
 
@@ -435,6 +457,8 @@ import { getDisplayBottomLine, getBottomLinePresentation } from './result-bottom
   let currentReport  = null;
   let activeSevFilter  = null;
   let activeAgentFilter = null;
+  let activeAuditController = null;
+  let progressInterval = null;
 
   // ── Section switching ──────────────────────────────────────────────────────
 
@@ -712,63 +736,115 @@ import { getDisplayBottomLine, getBottomLinePresentation } from './result-bottom
   };
 
   window.resetToInput = function() {
+    stopActiveAudit(true);
     currentReport = null;
     showSection('input-section');
   };
 
   // ── Main submit flow ───────────────────────────────────────────────────────
 
-  form.addEventListener('submit', async (e) => {
+  form.addEventListener('submit', (e) => {
     e.preventDefault();
-    if (!validateAddress()) return;
+    if (activeAuditController || !validateAddress()) return;
 
     const address = addrInput.value.trim();
     const chain = chainSelect.value;
+    runAudit({ address, chain });
+  });
 
-    // Show loading
+  async function runAudit({ address, chain, jobId = null }) {
+    if (activeAuditController) return;
+
+    const controller = new AbortController();
+    activeAuditController = controller;
+
     showSection('loading-section');
     renderLoadingState(address, chain);
+    startProgressAnimation();
 
-    // Animate progress slowly while waiting.
+    let activeJobId = jobId;
+
+    try {
+      if (!activeJobId) {
+        activeJobId = createAuditJobId();
+        saveActiveAuditJob(getJobStorage(), { jobId: activeJobId, address, chain });
+      }
+
+      const result = await runAuditJob({
+        endpoint: ANALYZE_API_URL,
+        jobId: activeJobId,
+        address,
+        chain,
+        signal: controller.signal,
+      });
+
+      updateAgentCards(result.report);
+      await new Promise(r => setTimeout(r, 600));
+      if (controller.signal.aborted) return;
+
+      showSection('results-section');
+      renderResults(result);
+      clearActiveAuditJob(getJobStorage());
+    } catch (error) {
+      if (isAbortError(error) || controller.signal.aborted) return;
+      if (!error.jobMayExist) clearActiveAuditJob(getJobStorage());
+      const errorCode = error.code || 'internal_error';
+      showError(errorCode, error.code ? error.message : null);
+    } finally {
+      if (activeAuditController === controller) {
+        activeAuditController = null;
+        stopProgressAnimation();
+      }
+    }
+  }
+
+  function startProgressAnimation() {
+    stopProgressAnimation();
     let pct = 10;
-    const progressInterval = setInterval(() => {
+    progressInterval = setInterval(() => {
       pct = Math.min(pct + Math.random() * 5, 90);
       $('#progress-fill').style.width = pct + '%';
     }, 800);
+  }
 
+  function stopProgressAnimation() {
+    if (progressInterval === null) return;
+    clearInterval(progressInterval);
+    progressInterval = null;
+  }
+
+  function stopActiveAudit(forgetJob) {
+    activeAuditController?.abort();
+    activeAuditController = null;
+    stopProgressAnimation();
+    if (forgetJob) clearActiveAuditJob(getJobStorage());
+  }
+
+  function getJobStorage() {
     try {
-      const res = await fetch(ANALYZE_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address, chain }),
-      });
-
-      clearInterval(progressInterval);
-
-      const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        showError(data.error, data.message);
-        return;
-      }
-
-      // Success
-      // Brief pause to let the user see the agents flip to their final state.
-      updateAgentCards(data.report);
-      await new Promise(r => setTimeout(r, 600));
-
-      showSection('results-section');
-      renderResults(data);
-
-    } catch (err) {
-      clearInterval(progressInterval);
-      showError('internal_error', 'Network error. Please check your connection and try again.');
+      return window.sessionStorage;
+    } catch {
+      return null;
     }
-  });
+  }
+
+  function resumeActiveAudit() {
+    if (activeAuditController) return;
+    const activeJob = loadActiveAuditJob(getJobStorage());
+    if (!activeJob) return;
+    addrInput.value = activeJob.address;
+    chainSelect.value = activeJob.chain;
+    runAudit(activeJob);
+  }
 
   // ── Init ───────────────────────────────────────────────────────────────────
 
   addrInput.addEventListener('input', hideAddrError);
+  window.addEventListener('pagehide', () => stopActiveAudit(false));
+  window.addEventListener('pageshow', (event) => {
+    if (event.persisted) resumeActiveAudit();
+  });
+  resumeActiveAudit();
 
 })();
 </script>

@@ -67,7 +67,7 @@ Edit `.dev.vars` and fill in your keys:
 | `AI_TOTAL_BUDGET_MS` | Optional per-agent total timeout override in milliseconds. Useful for slower local providers like `codex-cli` or `claude-cli` |
 | `AI_PER_ATTEMPT_TIMEOUT_MS` | Optional per-attempt timeout override in milliseconds |
 | `AI_AGENT_CONCURRENCY` | Optional model-call concurrency. Defaults to `1` for free-tier friendliness |
-| `ANALYZE_RELAY_URL` | Optional production relay target. If set, `/api/analyze` forwards requests to this URL instead of running analysis in Cloudflare |
+| `ANALYZE_RELAY_URL` | Optional production relay target. If set, analysis job creation and status requests are forwarded to this URL |
 | `ANALYZE_RELAY_TOKEN` | Optional shared secret sent from the public relay to the local runner as `x-opensentry-runner-token` |
 | `ETHERSCAN_API_KEY` | [Etherscan](https://etherscan.io/apis) — free tier is sufficient. One key works across all chains via V2 API |
 
@@ -129,9 +129,23 @@ ANALYZE_RELAY_TOKEN="the-same-long-random-secret"
 
 After redeploying the Pages environment, visitors keep using
 `https://opensentry.tech/audit-tool.html`. The browser calls
-`https://opensentry.pages.dev/api/analyze`, which relays to your desktop.
+`https://opensentry.pages.dev/api/analyze`, which creates a persistent job on
+your desktop. The existing source fetch, compilation, and agent analysis all
+continue to run locally. The browser polls short status requests until the job
+finishes, so the long-running audit is not held open through Cloudflare.
+
+The runner executes one complete audit at a time and accepts up to eight
+unfinished jobs. Job state is stored in `.opensentry/analysis-jobs.sqlite`.
+Only one runner process can own that database at a time; a second runner exits
+without modifying the active runner's jobs.
+Completed results remain available for 24 hours, which lets the browser resume
+polling after a refresh or temporary tunnel outage. If the runner process
+restarts during an audit, that job is marked as interrupted instead of being
+silently rerun and consuming the model twice.
+
 Keep both `npm run runner` and the tunnel running; if your computer sleeps or
-the tunnel stops, public audits will fail with `relay_unavailable`.
+the tunnel stops, new audits cannot start. A browser polling an existing job
+will retry with bounded backoff until the tunnel returns.
 
 For production, create a named tunnel once:
 
@@ -227,15 +241,15 @@ npm run cli -- analyze --file ./contracts/Vault.sol --trace-dir ./.opensentry-tr
 ```
 Browser on opensentry.tech
         │
-        │ POST https://opensentry.pages.dev/api/analyze
+        │ POST job, then GET job status
         ▼
 Cloudflare Pages relay
-  CORS, validation, rate limiting
+  CORS and validation
         │
-        │ authenticated HTTPS tunnel
+        │ short authenticated HTTPS requests
         ▼
 Local Node runner
-  source fetch → compiler facts → 8 agents → merge
+  SQLite queue → source fetch → compiler facts → 8 agents → merge
         │                              │
         ▼                              ▼
   Etherscan V2                    configured AI provider
@@ -244,8 +258,8 @@ Local Node runner
 ### Pipeline summary
 
 1. **Public middleware** — CORS, configurable abuse protection, method and content-type validation
-2. **Relay** — validates address and chain, then forwards with the shared runner token
-3. **Local runner** — accepts only authenticated requests and executes the Node analysis pipeline
+2. **Relay:** validates job requests, then forwards them with the shared runner token
+3. **Local runner:** persists jobs, executes one audit at a time, and serves job status without exposing provider credentials
 4. **Fetch source** — Etherscan V2 multichain API, including multi-file and proxy handling
 5. **Compiler facts** — compiles with the matching bundled Solidity compiler and derives deterministic findings
 6. **Agent runner** — calls the configured model provider with bounded concurrency and validates structured output

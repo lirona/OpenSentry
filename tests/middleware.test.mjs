@@ -58,7 +58,18 @@ test('OPTIONS preflight from allowed origin → 204 with CORS headers', async ()
   }));
   assert.equal(res.status, 204);
   assert.equal(res.headers.get('Access-Control-Allow-Origin'), 'https://opensentry.tech');
-  assert.match(res.headers.get('Access-Control-Allow-Methods'), /POST/);
+  assert.equal(res.headers.get('Access-Control-Allow-Methods'), 'GET, POST, OPTIONS');
+});
+
+test('OPTIONS preflight for a job status route allows GET', async () => {
+  const res = await onRequest(makeContext({
+    method: 'OPTIONS',
+    url: 'https://opensentry.tech/api/analyze/2dd20c93-e528-4e75-bd70-cf3e6f1699b9',
+    origin: 'https://opensentry.tech',
+  }));
+
+  assert.equal(res.status, 204);
+  assert.equal(res.headers.get('Access-Control-Allow-Methods'), 'GET, POST, OPTIONS');
 });
 
 test('OPTIONS preflight from localhost → 204', async () => {
@@ -129,6 +140,37 @@ test('POST /api/analyze with application/json; charset=utf-8 → passes', async 
   assert.equal(res.status, 200);
 });
 
+test('GET /api/analyze/:jobId passes without a Content-Type header', async () => {
+  const res = await onRequest(makeContext({
+    method: 'GET',
+    url: 'https://opensentry.tech/api/analyze/2dd20c93-e528-4e75-bd70-cf3e6f1699b9',
+    origin: 'https://opensentry.tech',
+  }));
+
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('Access-Control-Allow-Origin'), 'https://opensentry.tech');
+});
+
+test('POST /api/analyze/:jobId returns 405 before content-type validation', async () => {
+  let nextCalled = false;
+  const context = makeContext({
+    method: 'POST',
+    url: 'https://opensentry.tech/api/analyze/2dd20c93-e528-4e75-bd70-cf3e6f1699b9',
+    contentType: 'text/plain',
+    origin: 'https://opensentry.tech',
+  });
+  context.next = async () => {
+    nextCalled = true;
+    return new Response();
+  };
+
+  const res = await onRequest(context);
+
+  assert.equal(res.status, 405);
+  assert.equal(nextCalled, false);
+  assert.equal((await json(res)).error, 'method_not_allowed');
+});
+
 test('POST /api/analyze without required local-runner token → 401', async () => {
   let nextCalled = false;
   const context = makeContext({
@@ -177,6 +219,54 @@ test('POST /api/analyze relay mode does not require browser token', async () => 
   assert.equal(res.status, 200);
 });
 
+test('GET /api/analyze/:jobId without required local-runner token returns 401', async () => {
+  let nextCalled = false;
+  const context = makeContext({
+    method: 'GET',
+    url: 'https://opensentry.tech/api/analyze/2dd20c93-e528-4e75-bd70-cf3e6f1699b9',
+    origin: 'https://opensentry.tech',
+    env: { ANALYZE_RELAY_TOKEN: 'runner-secret' },
+  });
+  context.next = async () => {
+    nextCalled = true;
+    return new Response(JSON.stringify({ ok: true }));
+  };
+
+  const res = await onRequest(context);
+
+  assert.equal(res.status, 401);
+  assert.equal(nextCalled, false);
+  assert.equal(res.headers.get('Access-Control-Allow-Origin'), 'https://opensentry.tech');
+  assert.equal((await json(res)).error, 'unauthorized_runner_request');
+});
+
+test('GET /api/analyze/:jobId with required local-runner token passes', async () => {
+  const res = await onRequest(makeContext({
+    method: 'GET',
+    url: 'https://opensentry.tech/api/analyze/2dd20c93-e528-4e75-bd70-cf3e6f1699b9',
+    origin: 'https://opensentry.tech',
+    env: { ANALYZE_RELAY_TOKEN: 'runner-secret' },
+    headers: { 'x-opensentry-runner-token': 'runner-secret' },
+  }));
+
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('Access-Control-Allow-Origin'), 'https://opensentry.tech');
+});
+
+test('GET /api/analyze/:jobId in relay mode does not require a browser token', async () => {
+  const res = await onRequest(makeContext({
+    method: 'GET',
+    url: 'https://opensentry.tech/api/analyze/2dd20c93-e528-4e75-bd70-cf3e6f1699b9',
+    origin: 'https://opensentry.tech',
+    env: {
+      ANALYZE_RELAY_TOKEN: 'runner-secret',
+      ANALYZE_RELAY_URL: 'https://runner.example.com/api/analyze',
+    },
+  }));
+
+  assert.equal(res.status, 200);
+});
+
 // ---- non-analyze routes pass through without method/content checks ---------
 
 test('GET /api/other → passes through (no method guard)', async () => {
@@ -185,6 +275,17 @@ test('GET /api/other → passes through (no method guard)', async () => {
     url: 'https://opensentry.tech/api/other',
     origin: 'https://opensentry.tech',
   }));
+  assert.equal(res.status, 200);
+});
+
+test('analyze-like routes do not receive job-route guards', async () => {
+  const res = await onRequest(makeContext({
+    method: 'GET',
+    url: 'https://opensentry.tech/api/analyze-extra',
+    origin: 'https://opensentry.tech',
+    env: { ANALYZE_RELAY_TOKEN: 'runner-secret' },
+  }));
+
   assert.equal(res.status, 200);
 });
 
